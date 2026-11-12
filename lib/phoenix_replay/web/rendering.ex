@@ -11,14 +11,30 @@ defmodule PhoenixReplay.Web.Rendering do
   `PhoenixReplay.Web.Live.ReplayComponent`, which renders the original
   module with the component's recorded assigns. Components need no changes
   to be replayed.
+
+  `put_streams_and_uploads/2` gives a view or component the `@streams` and
+  `@uploads` its template reads, rebuilt from the recording, which
+  `assign/2` refuses to set. A stream or upload the recording lacks, as in
+  one made without `:streams` or `:uploads`, renders empty; see
+  `render_check/3`.
   """
 
   require Logger
 
-  alias Phoenix.LiveView.{Component, Comprehension, Rendered}
+  alias Phoenix.LiveView.{Component, Comprehension, LiveStream, Rendered, Socket}
+  alias Phoenix.LiveView.{UploadConfig, UploadEntry}
   alias PhoenixReplay.Web.Live.ReplayComponent
 
   @type states :: %{{module(), term()} => map()}
+
+  @typedoc """
+  What a template reads that the recording lacks: an assign, or a stream
+  or upload by name.
+  """
+  @type missing :: atom() | {:streams | :uploads, atom()}
+
+  @typedoc "How a template rendered with recorded assigns; see `render_check/3`."
+  @type check :: :ok | {:missing, missing()} | {:error, String.t()}
 
   @max_description 200
   # Assigns LiveView keeps for itself, which `assign/2` refuses.
@@ -107,22 +123,32 @@ defmodule PhoenixReplay.Web.Rendering do
   is logged at the debug level.
   """
   @spec render_error(module(), map(), keyword()) :: String.t() | nil
-  def render_error(module, assigns, opts \\ []) do
-    case render_check(module, assigns, opts) do
-      :ok -> nil
-      {:missing, key} -> "the recording has no @#{key}"
-      {:error, description} -> description
-    end
-  end
+  def render_error(module, assigns, opts \\ []),
+    do: module |> render_check(assigns, opts) |> check_error()
+
+  @doc "The short description of a failed `render_check/3`, or `nil` when it passed."
+  @spec check_error(check()) :: String.t() | nil
+  def check_error(:ok), do: nil
+  def check_error({:missing, key}), do: "the recording has no #{name(key)}"
+  def check_error({:error, description}), do: description
+
+  @doc """
+  How the player names what a template reads that the recording lacks:
+  `@count`, `@streams.rows`.
+  """
+  @spec name(missing()) :: String.t()
+  def name({kind, name}), do: "@#{kind}.#{name}"
+  def name(key), do: "@#{key}"
 
   @doc """
   Renders `module` with `assigns`, as `render_error/2` does, telling an
   assign the recording lacks, such as one the template began to read after
   the session was recorded, from other failures: `{:missing, key}`, or
-  `{:error, description}`. Takes `render/3`'s options.
+  `{:error, description}`. A stream or upload missing from the `@streams`
+  or `@uploads` that `put_streams_and_uploads/2` set is
+  `{:missing, {:streams | :uploads, name}}`. Takes `render/3`'s options.
   """
-  @spec render_check(module(), map(), keyword()) ::
-          :ok | {:missing, atom()} | {:error, String.t()}
+  @spec render_check(module(), map(), keyword()) :: check()
   # credo:disable-for-next-line ExSlop.Check.Warning.BlanketRescue
   def render_check(module, assigns, opts \\ []) do
     module |> render(assigns, opts) |> evaluate()
@@ -134,15 +160,139 @@ defmodule PhoenixReplay.Web.Rendering do
         "PhoenixReplay: #{inspect(module)} failed to render: #{Exception.message(exception)}"
       )
 
-      case exception do
-        %KeyError{key: key, term: %{__changed__: _changed}}
-        when is_atom(key) and key not in @reserved ->
-          {:missing, key}
-
-        exception ->
-          {:error, describe(exception)}
+      case missing(exception, assigns) do
+        nil -> {:error, describe(exception)}
+        key -> {:missing, key}
       end
   end
+
+  defp missing(%KeyError{key: key, term: %{__changed__: _changed}}, _assigns)
+       when is_atom(key) and key not in @reserved,
+       do: key
+
+  defp missing(%KeyError{key: name, term: term}, assigns) when is_atom(name) and is_map(term) do
+    cond do
+      term == assigns[:streams] -> {:streams, name}
+      term == assigns[:uploads] -> {:uploads, name}
+      true -> nil
+    end
+  end
+
+  defp missing(_exception, _assigns), do: nil
+
+  @doc """
+  Puts the `@streams` and `@uploads` of a replayed view or component into
+  `socket_or_assigns`, built from the rows and upload state the timeline
+  keeps under `:streams` and `:uploads` in its `recorded` assigns.
+
+  Each stream shows exactly its recorded rows: it is reset and its rows
+  inserted in order on every step, under a ref unique on the page. Each
+  upload is a `Phoenix.LiveView.UploadConfig` with its recorded settings,
+  entries and errors, which LiveView cannot upload to.
+
+  `assign/2` refuses both keys, so they are put directly and marked
+  changed, and left alone when they are the same as before. They are
+  always put, empty without a recording of them, which lets
+  `render_check/3` tell a stream or upload the recording lacks.
+  """
+  @spec put_streams_and_uploads(Socket.t() | map(), map()) :: Socket.t() | map()
+  def put_streams_and_uploads(socket_or_assigns, recorded) do
+    on_assigns(socket_or_assigns, fn assigns ->
+      streams =
+        Map.new(recorded[:streams] || %{}, fn {name, rows} ->
+          {name, stream(assigns, name, rows)}
+        end)
+
+      uploads =
+        Map.new(recorded[:uploads] || %{}, fn {name, upload} -> {name, upload(name, upload)} end)
+
+      # LiveView finds an upload by the refs listed here: listing none, it
+      # ignores the files a change in the replayed page sends.
+      assigns
+      |> put_reserved(:streams, streams)
+      |> put_reserved(:uploads, Map.put(uploads, :__phoenix_refs_to_names__, %{}))
+    end)
+  end
+
+  @doc """
+  Puts an empty stream or upload in place of `missing`, one the template
+  reads but `put_streams_and_uploads/2` found nothing recorded for.
+  """
+  @spec put_empty(Socket.t() | map(), {:streams | :uploads, atom()}) :: Socket.t() | map()
+  def put_empty(socket_or_assigns, {kind, name}) do
+    on_assigns(socket_or_assigns, fn assigns ->
+      empty =
+        case kind do
+          :streams -> stream(assigns, name, [])
+          :uploads -> %UploadConfig{name: name, ref: ref(assigns, name), accept: :any}
+        end
+
+      put_reserved(assigns, kind, Map.put(assigns[kind] || %{}, name, empty))
+    end)
+  end
+
+  @doc """
+  Checks that `module` renders with `assigns`, as `render_check/3` does,
+  putting an empty stream or upload in place of each one the template
+  reads and the recording lacks, with `put_empty/2`. Returns the assigns
+  it rendered with and the last check.
+  """
+  @spec fill_streams_and_uploads(module(), map(), keyword()) :: {map(), check()}
+  def fill_streams_and_uploads(module, assigns, opts \\ []) do
+    case render_check(module, assigns, opts) do
+      {:missing, {_kind, _name} = key} ->
+        fill_streams_and_uploads(module, put_empty(assigns, key), opts)
+
+      check ->
+        {assigns, check}
+    end
+  end
+
+  defp on_assigns(%Socket{assigns: assigns} = socket, fun), do: %{socket | assigns: fun.(assigns)}
+  defp on_assigns(assigns, fun), do: fun.(assigns)
+
+  defp put_reserved(assigns, key, value) do
+    case assigns do
+      %{^key => ^value} ->
+        assigns
+
+      %{__changed__: %{} = changed} ->
+        assigns |> Map.put(key, value) |> Map.put(:__changed__, Map.put(changed, key, true))
+
+      %{} ->
+        Map.put(assigns, key, value)
+    end
+  end
+
+  # A stream renders its inserts newest first, so the rows go in reversed.
+  defp stream(assigns, name, rows) do
+    inserts =
+      Enum.reduce(rows, [], fn {dom_id, item}, acc -> [{dom_id, -1, item, nil, false} | acc] end)
+
+    %LiveStream{name: name, ref: ref(assigns, name), inserts: inserts, reset?: true}
+  end
+
+  defp upload(name, upload) do
+    entries =
+      Enum.map(upload.entries, fn entry ->
+        struct(UploadEntry, Map.merge(entry, %{upload_ref: upload.ref, upload_config: name}))
+      end)
+
+    %UploadConfig{
+      name: name,
+      ref: upload.ref,
+      accept: upload.accept,
+      max_entries: upload.max_entries,
+      max_file_size: upload.max_file_size,
+      auto_upload?: upload.auto_upload?,
+      errors: upload.errors,
+      entries: entries
+    }
+  end
+
+  # Unique on the page, as LiveView's own: a component's carry its cid.
+  defp ref(%{myself: %{cid: cid}}, name), do: "phx-replay-#{cid}-#{name}"
+  defp ref(_assigns, name), do: "phx-replay-#{name}"
 
   @doc """
   Describes why a recorded template failed to render, in a line short

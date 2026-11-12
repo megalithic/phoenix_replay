@@ -125,6 +125,14 @@ config :phoenix_replay,
 
 On by default; `state: false` records none, and `inputs: false` records everything but form controls. Needs `replayRecorder(liveSocket)` in the browser. See [Recording](recording.md#client-state).
 
+### Streams and uploads
+
+```elixir
+config :phoenix_replay, streams: true, uploads: true
+```
+
+Off by default. `streams: true` records what each render inserts, updates and deletes in streams, items sanitized under the stream's name; `uploads: true` records uploads' settings and each file's name, size, type and progress, never its contents. Either works per live session too. See [Recording](recording.md#streams-and-uploads).
+
 ### Releases
 
 ```elixir

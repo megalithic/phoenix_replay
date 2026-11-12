@@ -18,6 +18,7 @@ defmodule PhoenixReplay.Web.Components.Player.Frame do
   alias Phoenix.LiveView.JS
   alias PhoenixReplay.Recording.{Client, PointerTrack}
   alias PhoenixReplay.Web.Player.Shortcuts
+  alias PhoenixReplay.Web.Rendering
 
   @doc """
   The replayed page at the recorded viewport, keeping its aspect ratio:
@@ -58,7 +59,8 @@ defmodule PhoenixReplay.Web.Components.Player.Frame do
 
   attr :unrecorded, :list,
     default: [],
-    doc: "assigns the template reads that the recording lacks, shown as nil"
+    doc:
+      "assigns the template reads that the recording lacks, shown as nil, and streams and uploads, shown empty"
 
   attr :code_changes, :map,
     default: %{modules: [], deps: []},
@@ -126,7 +128,7 @@ defmodule PhoenixReplay.Web.Components.Player.Frame do
             class="inline-flex shrink-0 items-center gap-1 rounded-md bg-slow/10 px-2 py-1 text-slow"
           >
             <.icon name="lucide:circle-dashed" class="size-3.5" />
-            Not in recording: {Enum.map_join(@unrecorded, ", ", &"@#{&1}")}
+            Not in recording: {Enum.map_join(@unrecorded, ", ", &Rendering.name/1)}
           </span>
         </.tooltip>
         <span
@@ -298,9 +300,9 @@ defmodule PhoenixReplay.Web.Components.Player.Frame do
   end
 
   # Why the recording lacks them: the code changed since, or, with the
-  # same code, the sanitizer left them out.
+  # same code, the sanitizer, or `:streams` and `:uploads` off, left them out.
   defp unrecorded_label(%{modules: []}),
-    do: "Missing from the recording, as your sanitizer may leave out: shown unset"
+    do: "Missing from the recording, as your sanitizer or settings may leave out: shown unset"
 
   defp unrecorded_label(_changes), do: "Added since this was recorded: shown unset"
 end

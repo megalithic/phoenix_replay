@@ -4,7 +4,7 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
 
-  alias PhoenixReplay.Recording.Event
+  alias PhoenixReplay.Recording.{Event, Timeline}
   alias PhoenixReplay.Storage
   alias PhoenixReplay.Test.{Fixtures, Sessions}
   alias PhoenixReplay.Web.Player.Channel
@@ -329,6 +329,88 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
 
     assert view |> element("#item-pear button") |> render_click() =~ "pear"
     assert quantities.(render(view)) == %{"apple" => "0", "pear" => "1"}
+  end
+
+  defp texts(html, selector) do
+    html |> LazyHTML.from_fragment() |> LazyHTML.query(selector) |> Enum.map(&LazyHTML.text/1)
+  end
+
+  test "replays the rows of streams and the entries of uploads", %{sessions: sessions} do
+    {:ok, staging, _html, id} = Sessions.live(sessions, build_conn(), "/streamed/staging")
+    render_click(staging, "append", %{"name" => "beta"})
+    render_click(staging, "prepend", %{"name" => "gamma"})
+    render_click(staging, "rename", %{"id" => "alpha", "name" => "ALPHA"})
+    render_click(staging, "remove", %{"id" => "beta"})
+
+    for text <- ~w(one two three),
+        do: staging |> element("#add-note") |> render_click(%{"text" => text})
+
+    csv =
+      file_input(staging, "#upload", :csv, [%{name: "staff.csv", content: "a", type: "text/csv"}])
+
+    {:ok, _reply} = preflight_upload(csv)
+    render_click(staging, "reset", %{"name" => "zeta"})
+    staging |> element("#clear-notes") |> render_click()
+
+    assert Sessions.stop(sessions, staging) == :persisted
+    {:ok, recording} = Storage.fetch(Fixtures.storage(), id)
+
+    # Where each event and what it caused end.
+    ends =
+      for {{%Event{type: :event}, index}, caused} <- Timeline.interactions(recording.events),
+          do: index + length(caused)
+
+    {:ok, view, html} = live(build_conn(), "/replay/#{id}/frame?channel=c-streams")
+    assert texts(html, "#rows li") == ["alpha"]
+    assert texts(html, ".entry") == []
+    assert html =~ ~s(name="csv")
+    assert html =~ ~s(name="photo")
+
+    replay_at = fn index ->
+      seek("c-streams", index)
+      :sys.get_state(view.pid)
+      html = render(view)
+      {texts(html, "#rows li"), texts(html, "#note-list li"), texts(html, ".entry")}
+    end
+
+    assert [
+             {~w(alpha beta), [], []},
+             {~w(gamma alpha beta), [], []},
+             {~w(gamma ALPHA beta), [], []},
+             {~w(gamma ALPHA), [], []},
+             {~w(gamma ALPHA), ~w(one), []},
+             {~w(gamma ALPHA), ~w(two one), []},
+             {~w(gamma ALPHA), ~w(three two), ["staff.csv"]},
+             {~w(zeta), ~w(three two), ["staff.csv"]},
+             {~w(zeta), [], ["staff.csv"]}
+           ] == Enum.map(ends, replay_at)
+
+    # Back from the end, the page shows the rows as they were then.
+    assert replay_at.(Enum.at(ends, 1)) == {~w(gamma alpha beta), [], []}
+  end
+
+  test "renders streams and uploads a recording lacks as empty, and tells the player",
+       %{sessions: sessions} do
+    # Recorded without `streams: true` and `uploads: true`.
+    {:ok, staging, _html, id} = Sessions.live(sessions, build_conn(), "/staging")
+    render_click(staging, "append", %{"name" => "beta"})
+    staging |> element("#add-note") |> render_click(%{"text" => "one"})
+    assert Sessions.stop(sessions, staging) == :persisted
+
+    :ok = Channel.subscribe("c-unstreamed")
+    {:ok, view, html} = live(build_conn(), "/replay/#{id}/frame?channel=c-unstreamed")
+
+    assert_receive {Channel, {:unrecorded, [{:uploads, :csv}, {:streams, :rows}]}}
+    refute html =~ "Could not render"
+    assert texts(html, "#rows li") == []
+    assert texts(html, "#note-list li") == []
+    assert html =~ ~s(name="csv")
+    assert html =~ ~s(name="photo")
+
+    seek("c-unstreamed", 4)
+    :sys.get_state(view.pid)
+    refute render(view) =~ "Could not render"
+    refute_receive {Channel, {:unrecorded, _keys}}
   end
 
   test "waits for a live session from the player instead of reading the buffer" do

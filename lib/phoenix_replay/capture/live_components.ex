@@ -11,7 +11,9 @@ defmodule PhoenixReplay.Capture.LiveComponents do
     * `:event` — `%{name: String.t(), params: map, target: {module, id}}`,
       an event handled by a component, which the view's own hooks never see
     * `:component` — `%{module: module, id: term, assigns: map}`, the
-      component assigns changed by an update or event
+      component assigns changed by an update or event, with `:streams` and
+      `:uploads` when they are configured and changed; see
+      `PhoenixReplay.Capture.Assigns.streams_and_uploads/3`
     * `:component_destroyed` — `%{module: module, id: term}`
 
   LiveView does not yet emit telemetry for async results applied to a
@@ -125,21 +127,32 @@ defmodule PhoenixReplay.Capture.LiveComponents do
 
   defp record_changes(module, %{assigns: %{id: id, __changed__: changed} = assigns})
        when map_size(changed) > 0 do
-    with {:ok, _id, sanitizer} <- Buffer.session(self()),
-         changes when map_size(changes) > 0 <- sanitized_changes(assigns, changed, sanitizer) do
-      record(:component, %{module: module, id: id, assigns: changes})
-    else
-      _nothing -> :ok
+    with {:ok, _id, sanitizer} <- Buffer.session(self()) do
+      changes = Map.take(assigns, Map.keys(changed))
+      assigns = Assigns.component(changes, sanitizer)
+      streams_and_uploads = streams_and_uploads(changes, sanitizer)
+
+      if assigns != %{} or streams_and_uploads != %{} do
+        data = Map.merge(streams_and_uploads, %{module: module, id: id, assigns: assigns})
+        record(:component, data)
+      end
     end
+
+    :ok
   end
 
   defp record_changes(_module, _socket), do: :ok
 
-  defp sanitized_changes(assigns, changed, sanitizer) do
-    assigns
-    |> Map.take(Map.keys(changed))
-    |> Assigns.component(sanitizer)
+  # Most changes touch neither, so the session's settings are read only when one does.
+  defp streams_and_uploads(changes, sanitizer)
+       when is_map_key(changes, :streams) or is_map_key(changes, :uploads) do
+    case Buffer.streams_and_uploads(self()) do
+      {:ok, kept} -> Assigns.streams_and_uploads(changes, kept, sanitizer)
+      :error -> %{}
+    end
   end
+
+  defp streams_and_uploads(_changes, _sanitizer), do: %{}
 
   defp record(type, data) do
     Buffer.record(self(), type, data)

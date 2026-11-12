@@ -11,9 +11,15 @@ defmodule PhoenixReplay.Recording.Event do
     * `:params` — `%{params: map, uri: String.t()}`, a `handle_params/3` call
     * `:info` — `%{tag: atom | nil}`, a `handle_info/2` call; only the message
       tag is kept so arbitrary message contents are never stored
-    * `:render` — `%{assigns: map}`, the assigns changed by a render
+    * `:render` — `%{assigns: map}`, the assigns changed by a render. With
+      `:streams` configured, `streams: %{name => ops}` holds what it
+      changed in streams, see `PhoenixReplay.Recording.Streams`; with
+      `:uploads`, `uploads: %{name => upload}` the state of the uploads it
+      changed, see `PhoenixReplay.Capture.Uploads`. Either is absent when
+      the render changed none, as in recordings made without them
     * `:component` — `%{module: module, id: term, assigns: map}`, the
-      assigns of a LiveComponent changed by an update or event
+      assigns of a LiveComponent changed by an update or event, with
+      `:streams` and `:uploads` as a render's
     * `:component_destroyed` — `%{module: module, id: term}`, a
       LiveComponent removed from the page
     * `:telemetry` — `%{event: [atom], summary: String.t() | nil,
@@ -97,13 +103,13 @@ defmodule PhoenixReplay.Recording.Event do
   defdelegate label(event), to: PhoenixReplay.Recording.Label, as: :of
 
   @doc """
-  The assigns an event set: a mount's or render's, or the client state an
-  entry reported.
+  The assigns an event set: a mount's or render's, with `:streams` and
+  `:uploads` when it changed them, or the client state an entry reported.
   """
   @spec changed_keys(t() | nil) :: [atom()]
-  def changed_keys(%__MODULE__{type: type, data: %{assigns: assigns}})
+  def changed_keys(%__MODULE__{type: type, data: %{assigns: assigns} = data})
       when type in [:mount, :render],
-      do: Map.keys(assigns)
+      do: Map.keys(assigns) ++ Enum.filter([:streams, :uploads], &Map.has_key?(data, &1))
 
   def changed_keys(%__MODULE__{type: :state}), do: [PhoenixReplay.Recording.State.assign()]
   def changed_keys(_event), do: []

@@ -26,8 +26,11 @@ defmodule PhoenixReplay.Web.Live.Frame do
 
   LiveComponents in the template render through
   `PhoenixReplay.Web.Live.ReplayComponent` with their recorded assigns; see
-  `PhoenixReplay.Web.Rendering`. A template that fails with the recorded
-  assigns shows a placeholder instead of crashing the frame.
+  `PhoenixReplay.Web.Rendering`. The view and its components get the
+  `@streams` and `@uploads` recorded up to each moment, or empty ones; see
+  `PhoenixReplay.Web.Rendering.put_streams_and_uploads/2`. A template
+  that fails with the recorded assigns shows a placeholder instead of
+  crashing the frame.
 
   A session that is still running is never read from the buffer here: the
   player redacts it and hands it over with `PhoenixReplay.Web.Player.Channel.load/2`.
@@ -173,6 +176,7 @@ defmodule PhoenixReplay.Web.Live.Frame do
     socket
     |> assign(Map.new(previous_keys -- keys, &{&1, nil}))
     |> assign(recorded)
+    |> Rendering.put_streams_and_uploads(timeline.assigns)
     |> replace_flash(flash)
     |> update(@private, &%{&1 | components: states})
     |> refresh_components(states)
@@ -274,11 +278,16 @@ defmodule PhoenixReplay.Web.Live.Frame do
   # An assign the template reads but the recording lacks, such as one a
   # newer template reads in an older recording, is rendered as nil, which
   # most templates take as unset, and the player is told which. One filled
-  # before stays nil, and unrecorded, until the recording sets it.
+  # before stays nil, and unrecorded, until the recording sets it. A
+  # stream or upload the recording lacks renders empty; streams and
+  # uploads are put again on every step, so they are looked for again.
   defp check_render(socket) do
     frame = socket.assigns[@private]
     %{keys: recorded} = private = socket.private[@private]
-    carried = Enum.reject(private[:unrecorded] || [], &(&1 in recorded))
+
+    carried =
+      Enum.filter(private[:unrecorded] || [], &(is_atom(&1) and &1 not in recorded))
+
     {socket, unrecorded, error} = fill_unrecorded(socket, frame, Enum.reverse(carried))
 
     socket
@@ -290,6 +299,9 @@ defmodule PhoenixReplay.Web.Live.Frame do
     case Rendering.render_check(frame.view, socket.assigns, layout: frame.layout) do
       :ok ->
         {socket, unrecorded, nil}
+
+      {:missing, {_kind, _name} = key} ->
+        fill_unrecorded(Rendering.put_empty(socket, key), frame, [key | unrecorded])
 
       {:missing, key} ->
         if length(unrecorded) < @max_unrecorded and key not in unrecorded,

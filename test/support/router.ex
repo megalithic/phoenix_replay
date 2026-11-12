@@ -21,6 +21,11 @@ defmodule PhoenixReplay.Test.Router do
       live "/cart", PhoenixReplay.Test.Live.Cart
       live "/async", PhoenixReplay.Test.Live.AsyncPage
       live "/layout", PhoenixReplay.Test.Live.LayoutPage
+      live "/staging", PhoenixReplay.Test.Live.Staging
+    end
+
+    live_session :streamed, on_mount: [{PhoenixReplay.Recorder, streams: true, uploads: true}] do
+      live "/streamed/staging", PhoenixReplay.Test.Live.Staging
     end
 
     live_session :hooked,

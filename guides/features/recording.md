@@ -18,8 +18,8 @@ A recording is a list of `PhoenixReplay.Recording.Event` structs, each with a mi
 | `:params` | `handle_params/3` params and URI |
 | `:event` | `handle_event/3` name and params; `target: {module, id}` for events handled by a LiveComponent |
 | `:info` | `handle_info/2` message tag, never the message itself |
-| `:render` | Assigns changed by a render |
-| `:component` | LiveComponent assigns changed by an update or event |
+| `:render` | Assigns changed by a render, and what it changed in [streams and uploads](#streams-and-uploads) when they are on |
+| `:component` | LiveComponent assigns changed by an update or event, with streams and uploads as a render's |
 | `:component_destroyed` | A LiveComponent removed from the page |
 | `:telemetry` | A telemetry event captured by a [collector](telemetry-and-logs.md) |
 | `:log` | A log message, when [log collection](telemetry-and-logs.md#collecting-logs) is on |
@@ -259,6 +259,27 @@ Client state goes through your `PhoenixReplay.Sanitizer`'s `sanitize_params/1` w
 
 PhoenixReplay does not record focus, or `Phoenix.LiveView.JS` commands applied on the client, which the replay does not re-run.
 
+## Streams and uploads
+
+A stream keeps no items on the server: `stream/4`, `stream_insert/4` and `stream_delete/3` queue what the next render sends to the browser, and LiveView forgets it once sent. Uploads live in `@uploads`, apart from the assigns. So neither is recorded by default, and the replay shows a stream empty and an upload with no files.
+
+Turn them on globally or for a live session:
+
+```elixir
+config :phoenix_replay, streams: true, uploads: true
+
+live_session :onboarding,
+  on_mount: [{PhoenixReplay.Recorder, streams: true, uploads: true}] do
+  live "/onboarding", OnboardingLive
+end
+```
+
+With `streams: true`, each render records what it did to each stream it changed, in the view and in its components: whether it reset the stream, the DOM ids it deleted, and the rows it inserted or updated, with their `:at`, `:limit` and `:update_only`. The replay applies them as LiveView's client does, so each moment shows the rows the page showed, in order. Items go through your sanitizer's `sanitize_assigns/1` under the stream's name, as an assign of that name would; a sanitizer that leaves that name out, or returns something other than a list of as many items, leaves the stream out. Streams cost what their items cost: an item inserted once is recorded once, but a stream reset with a thousand rows records a thousand items.
+
+With `uploads: true`, each render that changed an upload records its settings (`:accept`, `:max_entries`, `:max_file_size`, `:auto_upload`), its errors, and each entry's file name, size, MIME type and progress, and whether it is valid, done or cancelled. Never the file's contents, where it was written, or its path on the user's machine. The replay renders `live_file_input/1`, the entries and `upload_errors/2` as they were; the replayed input uploads nothing.
+
+The **State** tab lists the rows of each stream under `streams` and the uploads under `uploads`, and the event list shows a render's changes as `rows +2 −1` and `upload csv`.
+
 ## Which sessions are kept
 
 Recording starts on every connected mount, but a session is saved only if the user interacted with it: it handled an event, in the view or a component, or navigated within the LiveView. Plain page views are discarded when the process exits.
@@ -284,7 +305,7 @@ live_session :checkout,
 end
 ```
 
-Per-session options accept `:sample_rate`, `:keep`, `:max_events`, `:sanitizer` and `:redact`. Once a session reaches `:max_events`, further LiveView events are dropped and the recording is kept as it is. Collected telemetry and logs have their own limits.
+Per-session options accept `:sample_rate`, `:keep`, `:max_events`, `:sanitizer`, `:redact`, `:flush`, `:pointer`, `:state`, `:streams` and `:uploads`. Once a session reaches `:max_events`, further LiveView events are dropped and the recording is kept as it is. Collected telemetry and logs have their own limits.
 
 `:max_memory` caps the buffer of sessions in progress, in bytes. While it is exceeded, new sessions are not recorded.
 
@@ -302,7 +323,8 @@ Each event fires after the session has left the buffer, so handlers see the fini
 
 Replay reconstructs the assigns of LiveViews and LiveComponents. It does not reconstruct:
 
-- streams and uploads, whose contents are not kept in assigns,
+- streams and uploads, unless [`:streams` and `:uploads`](#streams-and-uploads) are on; without them a template reads an empty stream, and an upload with no files, and the player notes "Not in recording: @streams.rows",
+- what `stream_async/4` puts into a LiveComponent's stream, which is applied without the telemetry the recorder listens to; see [LiveComponents](live-components.md#async-results),
 - what your JavaScript did with client state, such as rows a script filtered, unless the view renders it with `replay_render/1`; see [Client state](#client-state),
 - focus, and `Phoenix.LiveView.JS` commands applied on the client.
 
