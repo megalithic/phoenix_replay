@@ -9,6 +9,8 @@ defmodule PhoenixReplay.Test.BlockingRedactor do
 
     receive do
       :continue -> {:ok, text}
+      {:exit, reason} -> exit(reason)
+      {:throw, value} -> throw(value)
     end
   end
 end

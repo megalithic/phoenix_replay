@@ -152,7 +152,8 @@ defmodule PhoenixReplay.Catalog do
   detecting `PhoenixReplay.Redactor`. Pass `progress: fun` to be called
   with the number of events redacted so far and the total. Completion runs
   on the node holding the buffer, including any chunks it flushed to storage.
-  Remote completion has no time limit, as redaction can take a while.
+  Remote completion has no time limit, as redaction can take a while, but
+  stops if its caller exits or disconnects.
   """
   @spec fetch(Config.t(), Recording.id(), keyword()) :: {:ok, Recording.t()} | {:error, term()}
   def fetch(%Config{storage: storage}, id, opts \\ []) do
@@ -196,11 +197,49 @@ defmodule PhoenixReplay.Catalog do
 
   defp fetch_remote(id, opts) do
     case owner(id) do
-      nil -> :error
-      node -> :erpc.call(node, __MODULE__, :fetch_local, [id, opts], :infinity)
+      nil ->
+        :error
+
+      node ->
+        :erpc.call(
+          node,
+          __MODULE__,
+          :read_on_node,
+          [self(), __MODULE__, :fetch_local, [id, opts], :infinity],
+          :infinity
+        )
     end
   rescue
     ErlangError -> :error
+  catch
+    :exit, {kind, _reason} when kind in [:exception, :signal] -> :error
+    :throw, _reason -> :error
+  end
+
+  @doc """
+  Runs a node-local read while its caller lives, for at most `timeout` milliseconds.
+
+  `:infinity` allows a long completion. Unlike this owner-side bound,
+  [`:erpc` timeouts](https://www.erlang.org/doc/apps/kernel/erpc.html#call/5)
+  only stop waiting for a result; they do not stop the remote work.
+  """
+  @spec read_on_node(pid(), module(), atom(), [term()], timeout()) :: term()
+  def read_on_node(caller, module, function, args, timeout) do
+    worker = self()
+
+    spawn(fn ->
+      caller_ref = Process.monitor(caller)
+      worker_ref = Process.monitor(worker)
+
+      receive do
+        {:DOWN, ^caller_ref, :process, ^caller, _reason} -> Process.exit(worker, :kill)
+        {:DOWN, ^worker_ref, :process, ^worker, _reason} -> :ok
+      after
+        timeout -> Process.exit(worker, :kill)
+      end
+    end)
+
+    apply(module, function, args)
   end
 
   defp remote_results(module, function, args) do
@@ -209,7 +248,15 @@ defmodule PhoenixReplay.Catalog do
         []
 
       nodes ->
-        results = :erpc.multicall(nodes, module, function, args, @remote_timeout)
+        results =
+          :erpc.multicall(
+            nodes,
+            __MODULE__,
+            :read_on_node,
+            [self(), module, function, args, @remote_timeout],
+            @remote_timeout
+          )
+
         for {node, {:ok, result}} <- Enum.zip(nodes, results), do: {node, result}
     end
   end

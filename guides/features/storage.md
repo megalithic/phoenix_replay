@@ -52,7 +52,7 @@ Connect your BEAM nodes, for example with libcluster, and configure them to shar
 
 Running sessions stay in the memory of the node recording them. The dashboard queries connected nodes for **Live now**, filter values and activity counts, and opens a running session through the node holding its buffer. It uses that session's redactor and any chunks already flushed to storage; authorization is still checked on the node serving the viewer. Saved recordings are read from shared storage as usual.
 
-Discovery waits up to one second for connected nodes and ignores failures and timeouts, so an unavailable node does not hide sessions on healthy nodes. Opening a session waits for its owning node to finish redaction, without a time limit. If that node disconnects, the dashboard falls back to storage; an unsaved session on it is unavailable until it reconnects. Nodes should run the same application and PhoenixReplay code, since live playback calls code across nodes and renders the application's templates.
+Discovery waits up to one second for connected nodes and ignores failures and timeouts, so an unavailable node does not hide sessions on healthy nodes. Discovery work is also bounded on the owning node, rather than left running after the lookup times out. Opening a session waits for its owning node to finish redaction, without a time limit, but stops that work if the viewer's loading task exits or disconnects. If the owning node disconnects or its read fails, the dashboard falls back to storage; an unsaved session on it is unavailable until it reconnects. Nodes should run the same application and PhoenixReplay code, since live playback calls code across nodes and renders the application's templates.
 
 ## Running sessions
 

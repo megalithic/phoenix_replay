@@ -81,7 +81,7 @@ defmodule PhoenixReplay.CatalogClusterTest do
              Catalog.live(%Filter{query: recording.id}, System.system_time(:millisecond))
   end
 
-  test "skips a node whose live summaries time out", context do
+  test "stops remote discovery work when its summaries time out", context do
     %{other: other, config: config} = context
     recording = Fixtures.counter_recording(id: "slow-peer")
 
@@ -101,7 +101,52 @@ defmodule PhoenixReplay.CatalogClusterTest do
       end)
 
     assert_receive {:redacting, worker}
+    ref = Process.monitor(worker)
     assert [%{id: "local-with-slow-peer"}] = Task.await(lookup)
-    send(worker, :continue)
+    assert_receive {:DOWN, ^ref, :process, ^worker, :killed}
+  end
+
+  test "allows a long remote completion but stops it when its caller exits", context do
+    %{other: other, config: config} = context
+    recording = Fixtures.counter_recording(id: "cancelled-completion")
+
+    :ok =
+      :erpc.call(other, Fixtures, :buffer_recording, [
+        recording,
+        [redact: {BlockingRedactor, notify: self()}]
+      ])
+
+    caller = spawn(fn -> Catalog.fetch(config, recording.id) end)
+    on_exit(fn -> Process.exit(caller, :kill) end)
+    assert_receive {:redacting, worker}
+    ref = Process.monitor(worker)
+    refute_receive {:DOWN, ^ref, :process, ^worker, _reason}, 1_100
+    Process.exit(caller, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^worker, :killed}
+  end
+
+  for failure <- [:kill, :exit, :throw] do
+    test "falls back to storage when a remote completion fails with #{failure}", context do
+      %{other: other, config: config} = context
+      recording = Fixtures.counter_recording(id: "failed-completion-#{unquote(failure)}")
+      :ok = Storage.save(config.storage, recording)
+      on_exit(fn -> Storage.delete(config.storage, recording.id) end)
+
+      :ok =
+        :erpc.call(other, Fixtures, :buffer_recording, [
+          recording,
+          [redact: {BlockingRedactor, notify: self()}]
+        ])
+
+      lookup = Task.async(fn -> Catalog.fetch(config, recording.id) end)
+      assert_receive {:redacting, worker}
+
+      case unquote(failure) do
+        :kill -> Process.exit(worker, :kill)
+        kind -> send(worker, {kind, :failed})
+      end
+
+      assert Task.await(lookup) == {:ok, recording}
+    end
   end
 end
