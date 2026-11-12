@@ -28,10 +28,12 @@ Nested components are swapped the same way. When you seek, the frame refreshes e
 
 LiveView emits no telemetry when a `start_async/3`, `assign_async/3` or `stream_async/4` result is applied to a component. Until it does — proposed in [phoenix_live_view#4463](https://github.com/phoenixframework/phoenix_live_view/pull/4463) — `PhoenixReplay.Capture.AsyncResults` covers them: a component render that no recorded event explains is treated as an async result, and the component's assigns are read with `Phoenix.LiveView.Debug.live_components/1` from a supervised task and recorded.
 
-Two consequences follow from reading the state after the fact:
+An upload's preflight and progress reach a component the same way, without telemetry, so with `uploads: true` the snapshot records the component's uploads too, and the replay follows a file a component took from selection to completion.
+
+Three consequences follow from reading the state after the fact:
 
 - the snapshot copies the assigns of every component on the page, once per async result,
 - it reflects the component when the LiveView handles the request, so it can include changes from messages queued behind the result, and its time is when it is recorded,
 - by then LiveView has sent and forgotten the rows `stream_async/4` inserted, so a component's stream misses them, even with `streams: true`. A LiveView's own `stream_async/4` results are recorded.
 
-Once LiveView emits the event, PhoenixReplay records async results from it and the workaround stops running.
+Once LiveView emits the event, PhoenixReplay records async results from it, and the workaround runs only for uploads.

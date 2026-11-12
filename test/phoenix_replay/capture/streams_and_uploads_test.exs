@@ -10,7 +10,9 @@ defmodule PhoenixReplay.Capture.StreamsAndUploadsTest do
   alias PhoenixReplay.Sanitizer.Default
   alias PhoenixReplay.Session.Buffer
   alias PhoenixReplay.Storage
-  alias PhoenixReplay.Test.{Fixtures, Sessions}
+  alias PhoenixReplay.Recording.Timeline
+  alias PhoenixReplay.Test.{Fixtures, Sessions, Tasks}
+  alias PhoenixReplay.Test.Live.Notes
 
   @endpoint PhoenixReplay.Test.Endpoint
 
@@ -75,6 +77,38 @@ defmodule PhoenixReplay.Capture.StreamsAndUploadsTest do
 
     assert [%{photo: %{accept: :any, max_entries: 3, entries: []}}] =
              for(%Event{type: :component, data: %{uploads: uploads}} <- events, do: uploads)
+  end
+
+  test "records a component's upload through preflight, progress and completion",
+       %{sessions: sessions} do
+    {:ok, view, _html, id} = Sessions.live(sessions, build_conn(), "/streamed/staging")
+
+    photo =
+      &file_input(view, "#photo-form", :photo, [
+        %{name: &1, content: String.duplicate("x", 100), type: "image/png"}
+      ])
+
+    # LiveView applies them to the component without the telemetry the
+    # recorder listens to; the renders that follow are snapshotted.
+    entries = fn ->
+      render(view)
+      Tasks.await()
+      {:ok, recording} = Buffer.fetch(id)
+      timeline = Timeline.at(recording, Timeline.last_index(recording))
+      %{uploads: %{photo: %{entries: entries}}} = timeline.components[{Notes, "notes"}]
+      Enum.map(entries, &Map.take(&1, [:client_name, :preflighted?, :progress, :done?]))
+    end
+
+    {:ok, _reply} = preflight_upload(photo.("cat.png"))
+    cat = %{client_name: "cat.png", preflighted?: true, progress: 0, done?: false}
+    assert entries.() == [cat]
+
+    dog = photo.("dog.png")
+    render_upload(dog, "dog.png", 50)
+    assert [^cat, %{client_name: "dog.png", progress: 50, done?: false}] = entries.()
+
+    render_upload(dog, "dog.png", 50)
+    assert [^cat, %{client_name: "dog.png", progress: 100, done?: true}] = entries.()
   end
 
   test "records a stream an on_mount hook before the recorder defined", %{sessions: sessions} do

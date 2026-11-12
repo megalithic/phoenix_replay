@@ -22,6 +22,8 @@ defmodule PhoenixReplay.Test.Live.Notes do
   def handle_event("clear", _params, socket),
     do: {:noreply, stream(socket, :notes, [], reset: true)}
 
+  def handle_event("validate", _params, socket), do: {:noreply, socket}
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -29,7 +31,12 @@ defmodule PhoenixReplay.Test.Live.Notes do
       <ol id="note-list" phx-update="stream">
         <li :for={{dom_id, note} <- @streams.notes} id={dom_id}>{note.text}</li>
       </ol>
-      <.live_file_input upload={@uploads.photo} />
+      <form id="photo-form" phx-change="validate" phx-target={@myself}>
+        <.live_file_input upload={@uploads.photo} />
+      </form>
+      <p :for={entry <- @uploads.photo.entries} class="photo">
+        {entry.client_name} {entry.progress}%
+      </p>
       <button id="add-note" phx-click="add" phx-target={@myself}>Add</button>
       <button id="remove-note" phx-click="remove" phx-target={@myself}>Remove</button>
       <button id="clear-notes" phx-click="clear" phx-target={@myself}>Clear</button>
