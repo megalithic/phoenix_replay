@@ -58,6 +58,21 @@ defmodule PhoenixReplay.Recording.StreamsTest do
     assert items(steps) == [{"a", "A"}]
   end
 
+  test "an update_only insert puts back a row the same render reset or deleted" do
+    # The browser keeps a removed row the render inserts again, update_only or not.
+    shown = ops([{"a", []}, {"b", []}])
+
+    assert items([shown, ops([{"a", update_only: true, item: "A"}], reset?: true)]) ==
+             [{"a", "A"}]
+
+    assert items([shown, ops([{"a", update_only: true, item: "A"}], deletes: ["a"])]) ==
+             [{"b", "b"}, {"a", "A"}]
+
+    # A row that was not shown stays out.
+    assert items([shown, ops([{"c", update_only: true}], deletes: ["c"])]) ==
+             [{"a", "a"}, {"b", "b"}]
+  end
+
   test "a positive limit keeps the first rows, a negative one the last" do
     assert rows([ops([{"a", []}, {"b", []}]), ops([{"c", at: 0, limit: 2}])]) == ~w(c a)
     assert rows([ops([{"a", []}, {"b", []}]), ops([{"c", limit: -2}])]) == ~w(b c)

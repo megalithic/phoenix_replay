@@ -6,7 +6,8 @@ defmodule PhoenixReplay.Recording.Streams do
 
     * a reset removes every row, then deletes remove rows by DOM id
     * an insert of a row already shown updates it in place
-    * an insert with `update_only` changes only a row already shown
+    * an insert with `update_only` changes only a row already shown, or
+      one the same render removed, which the browser keeps to put back
     * a new row goes at `at`: `-1` appends it, `0` prepends it, and `n`
       puts it at index `n`, or last when there are fewer rows
     * then a `limit` keeps the first `limit` rows, or the last `-limit`
@@ -48,14 +49,14 @@ defmodule PhoenixReplay.Recording.Streams do
   end
 
   defp apply_ops(rows, %{reset?: reset?, deletes: deletes, inserts: inserts}) do
-    rows = if reset?, do: [], else: rows
-    rows = Enum.reject(rows, fn {dom_id, _item} -> dom_id in deletes end)
-    Enum.reduce(inserts, rows, &insert/2)
+    {removed, kept} = Enum.split_with(rows, fn {dom_id, _item} -> reset? or dom_id in deletes end)
+    removed = Map.new(removed)
+    Enum.reduce(inserts, kept, &insert(&1, &2, removed))
   end
 
-  defp insert(%{dom_id: dom_id, item: item} = insert, rows) do
+  defp insert(%{dom_id: dom_id, item: item} = insert, rows, removed) do
     case Enum.find_index(rows, &(elem(&1, 0) == dom_id)) do
-      nil when insert.update_only -> rows
+      nil when insert.update_only and not is_map_key(removed, dom_id) -> rows
       nil -> rows |> List.insert_at(insert.at, {dom_id, item}) |> limit(insert.limit)
       index -> List.replace_at(rows, index, {dom_id, item})
     end
