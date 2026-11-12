@@ -52,7 +52,7 @@ defmodule PhoenixReplay.Recorder do
     ]
 
   alias PhoenixReplay.{Config, Migration, Recording}
-  alias PhoenixReplay.Capture.{Assigns, Browser, Pointer, State}
+  alias PhoenixReplay.Capture.{Assigns, Browser, Pointer, State, Streams}
   alias PhoenixReplay.Session.{Buffer, Monitor}
 
   @private :phoenix_replay
@@ -212,13 +212,18 @@ defmodule PhoenixReplay.Recorder do
 
   defp after_render(socket), do: socket |> capture_layout() |> record_render()
 
-  # LiveView clears what a stream queued with an after_render hook it
-  # attaches when the view first streams, so after this one.
+  # Streams were taken as the render started, before LiveView's hooks
+  # cleared them; see PhoenixReplay.Capture.Streams.
   defp record_render(%{assigns: %{__changed__: changed}} = socket) when map_size(changed) > 0 do
     %{sanitizer: sanitizer, kept: kept} = socket.private[@private]
     changes = Map.take(socket.assigns, Map.keys(changed))
     assigns = Assigns.view(changes, sanitizer)
-    streams_and_uploads = Assigns.streams_and_uploads(changes, kept, sanitizer)
+
+    streams_and_uploads =
+      changes
+      |> Map.delete(:streams)
+      |> Assigns.streams_and_uploads(kept, sanitizer)
+      |> Map.merge(Streams.take())
 
     if assigns == %{} and streams_and_uploads == %{},
       do: socket,

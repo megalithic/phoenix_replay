@@ -6,7 +6,7 @@
 
 - `handle_params` records the URL and params,
 - `handle_info` records message tags (never message contents),
-- `after_render` records the assigns that changed in the render and, with `streams: true` and `uploads: true`, what it changed in streams and uploads, before LiveView forgets the stream items it sent,
+- `after_render` records the assigns that changed in the render and, with `streams: true` and `uploads: true`, what it changed in streams and uploads; the stream items are taken from `[:phoenix, :live_view, :render, :start]`, before LiveView forgets them, whatever hook defined the stream,
 - `handle_event` takes the batches the browser recorder sends, the pointer, client state and viewport, before your view sees them.
 
 Events your view handles are recorded by `PhoenixReplay.Capture.ViewEvents` from LiveView's `[:phoenix, :live_view, :handle_event, :start]` telemetry, which wraps the `on_mount` hooks too, so an event one of your hooks handles and halts is recorded as well.

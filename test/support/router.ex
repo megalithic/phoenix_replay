@@ -28,6 +28,14 @@ defmodule PhoenixReplay.Test.Router do
       live "/streamed/staging", PhoenixReplay.Test.Live.Staging
     end
 
+    live_session :streamed_by_hook,
+      on_mount: [
+        {PhoenixReplay.Test.Live.StreamingHook, :default},
+        {PhoenixReplay.Recorder, streams: true}
+      ] do
+      live "/hooked/staging", PhoenixReplay.Test.Live.Staging
+    end
+
     live_session :hooked,
       on_mount: [{PhoenixReplay.Test.Live.HaltingHook, :default}, PhoenixReplay.Recorder] do
       live "/hooked/counter", PhoenixReplay.Test.Live.Counter

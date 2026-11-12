@@ -77,6 +77,17 @@ defmodule PhoenixReplay.Capture.StreamsAndUploadsTest do
              for(%Event{type: :component, data: %{uploads: uploads}} <- events, do: uploads)
   end
 
+  test "records a stream an on_mount hook before the recorder defined", %{sessions: sessions} do
+    {:ok, view, _html, id} = Sessions.live(sessions, build_conn(), "/hooked/staging")
+    render_click(view, "append", %{"name" => "beta"})
+
+    assert [%{notices: notices, rows: _alpha}, %{rows: beta}] =
+             for(%Event{type: :render, data: %{streams: streams}} <- events(id), do: streams)
+
+    assert %{inserts: [%{dom_id: "notices-1", item: %{text: "Welcome"}}]} = notices
+    assert %{inserts: [%{dom_id: "row-beta"}]} = beta
+  end
+
   test "records neither streams nor uploads by default", %{sessions: sessions} do
     events = stage(sessions, "/staging")
 
