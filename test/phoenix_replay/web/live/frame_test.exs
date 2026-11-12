@@ -389,6 +389,26 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
     assert replay_at.(Enum.at(ends, 1)) == {~w(gamma alpha beta), [], []}
   end
 
+  test "renders an upload a sanitizer left unusable as empty" do
+    # As a sanitizer that kept only the entries recorded it.
+    save(%PhoenixReplay.Recording{
+      id: "sanitized-upload",
+      view: PhoenixReplay.Test.Live.Staging,
+      connected_at: System.system_time(:millisecond),
+      events: [
+        %Event{at: 0, type: :mount, data: %{assigns: %{}}},
+        %Event{at: 5, type: :render, data: %{assigns: %{}, uploads: %{csv: %{entries: []}}}}
+      ]
+    })
+
+    :ok = Channel.subscribe("c-sanitized")
+    {:ok, _view, html} = live(build_conn(), "/replay/sanitized-upload/frame?channel=c-sanitized")
+
+    assert_receive {Channel, {:unrecorded, [{:uploads, :csv}, {:streams, :rows}]}}
+    refute html =~ "Could not render"
+    assert html =~ ~s(name="csv")
+  end
+
   test "renders streams and uploads a recording lacks as empty, and tells the player",
        %{sessions: sessions} do
     # Recorded without `streams: true` and `uploads: true`.

@@ -37,6 +37,8 @@ defmodule PhoenixReplay.Web.Rendering do
   @type check :: :ok | {:missing, missing()} | {:error, String.t()}
 
   @max_description 200
+  # Streams and uploads a render puts empty at most, before it gives up.
+  @max_filled 20
   # Assigns LiveView keeps for itself, which `assign/2` refuses.
   @reserved [:flash, :uploads, :streams, :socket, :myself]
 
@@ -188,7 +190,9 @@ defmodule PhoenixReplay.Web.Rendering do
   Each stream shows exactly its recorded rows: it is reset and its rows
   inserted in order on every step, under a ref unique on the page. Each
   upload is a `Phoenix.LiveView.UploadConfig` with its recorded settings,
-  entries and errors, which LiveView cannot upload to.
+  entries and errors, which LiveView cannot upload to. An upload whose
+  recorded state lacks what that takes, as a sanitizer may leave it, is
+  left out, so it renders empty.
 
   `assign/2` refuses both keys, so they are put directly and marked
   changed, and left alone when they are the same as before. They are
@@ -204,7 +208,10 @@ defmodule PhoenixReplay.Web.Rendering do
         end)
 
       uploads =
-        Map.new(recorded[:uploads] || %{}, fn {name, upload} -> {name, upload(name, upload)} end)
+        for {name, upload} <- recorded[:uploads] || %{},
+            %UploadConfig{} = config <- [upload(name, upload)],
+            into: %{},
+            do: {name, config}
 
       # LiveView finds an upload by the refs listed here: listing none, it
       # ignores the files a change in the replayed page sends.
@@ -238,15 +245,22 @@ defmodule PhoenixReplay.Web.Rendering do
   it rendered with and the last check.
   """
   @spec fill_streams_and_uploads(module(), map(), keyword()) :: {map(), check()}
-  def fill_streams_and_uploads(module, assigns, opts \\ []) do
+  def fill_streams_and_uploads(module, assigns, opts \\ []),
+    do: fill(module, assigns, opts, max_filled())
+
+  defp fill(module, assigns, opts, left) do
     case render_check(module, assigns, opts) do
-      {:missing, {_kind, _name} = key} ->
-        fill_streams_and_uploads(module, put_empty(assigns, key), opts)
+      {:missing, {_kind, _name} = key} when left > 0 ->
+        fill(module, put_empty(assigns, key), opts, left - 1)
 
       check ->
         {assigns, check}
     end
   end
+
+  @doc "The most streams and uploads a render puts empty, to bound its retries."
+  @spec max_filled() :: pos_integer()
+  def max_filled, do: @max_filled
 
   defp on_assigns(%Socket{assigns: assigns} = socket, fun), do: %{socket | assigns: fun.(assigns)}
   defp on_assigns(assigns, fun), do: fun.(assigns)
@@ -272,27 +286,50 @@ defmodule PhoenixReplay.Web.Rendering do
     %LiveStream{name: name, ref: ref(assigns, name), inserts: inserts, reset?: true}
   end
 
-  defp upload(name, upload) do
-    entries =
-      Enum.map(upload.entries, fn entry ->
-        struct(UploadEntry, Map.merge(entry, %{upload_ref: upload.ref, upload_config: name}))
-      end)
-
-    %UploadConfig{
-      name: name,
-      ref: upload.ref,
-      accept: upload.accept,
-      max_entries: upload.max_entries,
-      max_file_size: upload.max_file_size,
-      auto_upload?: upload.auto_upload?,
-      errors: upload.errors,
-      entries: entries
-    }
+  defp upload(
+         name,
+         %{
+           ref: ref,
+           accept: accept,
+           max_entries: max_entries,
+           max_file_size: max_file_size,
+           auto_upload?: auto_upload?,
+           errors: errors,
+           entries: entries
+         }
+       )
+       when is_binary(ref) and is_list(errors) and is_list(entries) do
+    if Enum.all?(entries, &is_map/1) do
+      %UploadConfig{
+        name: name,
+        ref: ref,
+        accept: accept,
+        max_entries: max_entries,
+        max_file_size: max_file_size,
+        auto_upload?: auto_upload?,
+        errors: errors,
+        entries:
+          Enum.map(entries, fn entry ->
+            struct(UploadEntry, Map.merge(entry, %{upload_ref: ref, upload_config: name}))
+          end)
+      }
+    end
   end
 
-  # Unique on the page, as LiveView's own: a component's carry its cid.
-  defp ref(%{myself: %{cid: cid}}, name), do: "phx-replay-#{cid}-#{name}"
-  defp ref(_assigns, name), do: "phx-replay-#{name}"
+  defp upload(_name, _unusable), do: nil
+
+  # Unique on the page, in namespaces of their own for the view and each
+  # component, by cid; the name is encoded whole, so `:rows` and `"rows"`
+  # differ, and in characters a CSS selector takes.
+  defp ref(assigns, name) do
+    owner =
+      case assigns do
+        %{myself: %{cid: cid}} -> "c#{cid}"
+        %{} -> "view"
+      end
+
+    "phx-replay-#{owner}-" <> Base.url_encode64(:erlang.term_to_binary(name), padding: false)
+  end
 
   @doc """
   Describes why a recorded template failed to render, in a line short

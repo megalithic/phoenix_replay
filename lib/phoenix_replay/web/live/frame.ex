@@ -301,10 +301,12 @@ defmodule PhoenixReplay.Web.Live.Frame do
         {socket, unrecorded, nil}
 
       {:missing, {_kind, _name} = key} ->
-        fill_unrecorded(Rendering.put_empty(socket, key), frame, [key | unrecorded])
+        if Enum.count(unrecorded, &is_tuple/1) < Rendering.max_filled(),
+          do: fill_unrecorded(Rendering.put_empty(socket, key), frame, [key | unrecorded]),
+          else: {socket, unrecorded, Rendering.check_error({:missing, key})}
 
       {:missing, key} ->
-        if length(unrecorded) < @max_unrecorded and key not in unrecorded,
+        if Enum.count(unrecorded, &is_atom/1) < @max_unrecorded and key not in unrecorded,
           do: fill_unrecorded(assign(socket, key, nil), frame, [key | unrecorded]),
           else: {socket, unrecorded, "the recording has no @#{key}"}
 

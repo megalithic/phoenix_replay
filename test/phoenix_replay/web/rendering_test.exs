@@ -75,6 +75,51 @@ defmodule PhoenixReplay.Web.RenderingTest do
              "key :name not found"
   end
 
+  defmodule StreamView do
+    use Phoenix.LiveView
+
+    def render(assigns) do
+      ~H"""
+      <ul :for={i <- 1..30} id={"list-#{i}"} phx-update="stream">
+        <li :for={{id, row} <- Map.fetch!(@streams, :"rows_#{i}")} id={id}>{row}</li>
+      </ul>
+      """
+    end
+  end
+
+  test "gives the streams of the view and of each component refs no other stream has" do
+    rows = [{"r-1", 1}]
+    ref = &Rendering.put_streams_and_uploads(&1, %{streams: %{&2 => rows}}).streams[&2].ref
+
+    refs = [
+      ref.(%{__changed__: %{}}, :"1-rows"),
+      ref.(%{__changed__: %{}}, :rows),
+      ref.(%{__changed__: %{}}, "rows"),
+      ref.(%{__changed__: %{}, myself: %{cid: 1}}, :rows),
+      ref.(%{__changed__: %{}, myself: %{cid: 11}}, :rows),
+      ref.(%{__changed__: %{}, myself: %{cid: 1}}, :"1-rows")
+    ]
+
+    assert Enum.uniq(refs) == refs
+    assert Enum.all?(refs, &(&1 =~ ~r/^phx-replay-[\w-]+$/))
+  end
+
+  test "leaves out a recorded upload a sanitizer left without what an upload needs" do
+    recorded = %{uploads: %{csv: %{entries: []}, photo: %{ref: "p", entries: [:not_an_entry]}}}
+    assigns = Rendering.put_streams_and_uploads(%{__changed__: %{}}, recorded)
+
+    assert assigns.uploads == %{__phoenix_refs_to_names__: %{}}
+  end
+
+  test "puts empty streams in place of missing ones, a bounded number of times" do
+    assigns = Rendering.put_streams_and_uploads(%{__changed__: %{}}, %{})
+    {assigns, check} = Rendering.fill_streams_and_uploads(StreamView, assigns)
+
+    # The template reads more missing streams than a render fills.
+    assert map_size(assigns.streams) == Rendering.max_filled()
+    assert {:missing, {:streams, _name}} = check
+  end
+
   test "keeps the first line of other messages, shortened" do
     assert Rendering.describe(%RuntimeError{message: "boom\nmore detail"}) == "boom"
 
