@@ -95,9 +95,9 @@ defmodule PhoenixReplay.Capture.StreamsAndUploadsTest do
     rows = %LiveStream{
       name: :rows,
       inserts: [
-        {"rows-2", 0, %{id: 2, password: "b"}, nil, false},
+        {"rows-2", 0, %{id: 2, name: "new", password: "b"}, nil, false},
         {"rows-1", -1, %{id: 1, password: "a"}, -10, nil},
-        {"rows-2", -1, %{id: 2, password: "old"}, nil, false}
+        {"rows-2", -1, %{id: 2, name: "old", password: "old"}, 5, true}
       ],
       deletes: ["rows-0"]
     }
@@ -105,7 +105,8 @@ defmodule PhoenixReplay.Capture.StreamsAndUploadsTest do
     tokens = %LiveStream{name: :tokens, inserts: [{"tokens-1", -1, %{id: 1}, nil, false}]}
     streams = %{__changed__: MapSet.new([:rows, :tokens]), __ref__: 2, rows: rows, tokens: tokens}
 
-    # Inserted twice, a row renders once, where and as it was inserted last.
+    # Inserted twice, a row renders once, in the order and with the item of
+    # its last insert, and the browser places it as its first insert said.
     # The default sanitizer filters a value named like a token, which is
     # not a list of rows, so that stream is left out.
     assert Streams.pending(streams, Default) == %{
@@ -122,10 +123,10 @@ defmodule PhoenixReplay.Capture.StreamsAndUploadsTest do
                  },
                  %{
                    dom_id: "rows-2",
-                   at: 0,
-                   limit: nil,
-                   update_only: false,
-                   item: %{id: 2, password: "[FILTERED]"}
+                   at: -1,
+                   limit: 5,
+                   update_only: true,
+                   item: %{id: 2, name: "new", password: "[FILTERED]"}
                  }
                ]
              }
