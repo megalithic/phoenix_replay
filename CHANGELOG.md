@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- New recordings open on nodes that never knew the recording node, including after a redeploy changes its name. Storage replaces pids, ports, references and local functions with `PhoenixReplay.Recording.Runtime` structs that display like the original values but stay distinct from literal strings in map keys and sets, and keeps regex sources and options without their compiled patterns, including in forms' changeset validations. External functions are kept. Recorded runtime values and regexes are for display, not execution during replay. Already saved recordings are unchanged; there is no migration.
+
 ## 0.6.2 - 2026-10-09
 
 Two replay fixes: a view's own layout, and lists of integers.

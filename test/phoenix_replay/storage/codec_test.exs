@@ -4,13 +4,94 @@ defmodule PhoenixReplay.Storage.CodecTest do
   alias PhoenixReplay.Recording
   alias PhoenixReplay.Recording.Client
   alias PhoenixReplay.Recording.Client.Landing
-  alias PhoenixReplay.Recording.Summary
+  alias PhoenixReplay.Recording.{Runtime, Summary, Value}
   alias PhoenixReplay.Storage.Codec
   alias PhoenixReplay.Test.Fixtures
 
   test "round-trips a recording" do
     recording = Fixtures.counter_recording()
     assert Codec.decode(Codec.encode(recording), Recording) == {:ok, recording}
+  end
+
+  test "stores node-bound values without introducing the recording node's atom" do
+    name = "phoenix_replay_codec_#{System.unique_integer([:positive])}@nohost"
+    assert_raise ArgumentError, fn -> String.to_existing_atom(name) end
+
+    script = """
+    alias PhoenixReplay.Storage.Codec
+    alias PhoenixReplay.Test.Fixtures
+
+    values = %{
+      pid: self(),
+      reference: make_ref(),
+      port: hd(Port.list()),
+      local: fn -> self() end,
+      external: &String.upcase/1
+    }
+
+    recording = Fixtures.counter_recording(clicks: 0)
+    [mount, render] = recording.events
+    recording = %{recording | events: [mount, put_in(render.data.assigns, values)]}
+    <<131, encoded_node::binary>> = :erlang.term_to_binary(node())
+    name = #{inspect(name)}
+
+    raw =
+      recording
+      |> :erlang.term_to_binary()
+      |> :binary.replace(encoded_node, <<119, byte_size(name), name::binary>>, [:global])
+
+    recording = :erlang.binary_to_term(raw)
+    result = {raw, Codec.encode(recording), IO.iodata_to_binary(Codec.frame(recording))}
+    IO.write(Base.encode64(:erlang.term_to_binary(result)))
+    """
+
+    {output, 0} =
+      System.cmd("elixir", ["-pa", Path.dirname(:code.which(Codec)), "-e", script],
+        stderr_to_stdout: true
+      )
+
+    {raw, encoded, framed} = output |> Base.decode64!() |> :erlang.binary_to_term([:safe])
+    assert Codec.decode(raw, Recording) == {:error, :undecodable}
+    assert_raise ArgumentError, fn -> :erlang.binary_to_term(raw, [:safe]) end
+
+    assert {:ok, recording} = Codec.decode(encoded, Recording)
+    assert :erlang.binary_to_term(encoded, [:safe]) == recording
+    assert Codec.decode_frames(framed) == [recording]
+    [_, render = %{data: %{assigns: values}}] = recording.events
+    assert %Runtime{kind: :pid, inspect: "#PID<" <> _rest} = values.pid
+    assert %Runtime{kind: :reference, inspect: "#Reference<" <> _rest} = values.reference
+    assert %Runtime{kind: :port, inspect: "#Port<" <> _rest} = values.port
+    assert %Runtime{kind: :function, inspect: "#Function<" <> _rest} = values.local
+    assert values.external == (&String.upcase/1)
+
+    [{"Assigns", highlighted}] = PhoenixReplay.Web.Player.Events.details(render)
+
+    text =
+      highlighted |> Phoenix.HTML.safe_to_string() |> LazyHTML.from_fragment() |> LazyHTML.text()
+
+    assert text =~ inspect(values.pid)
+    assert text =~ inspect(values.reference)
+    refute text =~ "PhoenixReplay.Recording.Runtime"
+    assert_raise ArgumentError, fn -> String.to_existing_atom(name) end
+  end
+
+  test "keeps runtime map keys and set members distinct from their literal strings" do
+    pid = self()
+    literal = inspect(pid)
+    runtime = %Runtime{kind: :pid, inspect: literal}
+    map = %{pid => :runtime, literal => :literal}
+    set = MapSet.new([pid, literal])
+
+    assert {:ok, [stored_map, stored_set]} = Codec.decode(Codec.encode([map, set]), :list)
+    assert stored_map == %{runtime => :runtime, literal => :literal}
+    assert stored_set == MapSet.new([runtime, literal])
+    assert Value.inspect([runtime, literal]) == "[#{literal}, #{inspect(literal)}]"
+
+    other = %{runtime | inspect: "#PID<0.1.0>"}
+
+    assert PhoenixReplay.Recording.Diff.changes(runtime, other) == [
+             {:changed, [], runtime, other}
+           ]
   end
 
   test "fills fields added after the data was written" do

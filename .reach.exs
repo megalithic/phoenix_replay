@@ -42,7 +42,8 @@ model = [
   "PhoenixReplay.Export.Options",
   "PhoenixReplay.Export.Schedule",
   "PhoenixReplay.Recording",
-  "PhoenixReplay.Recording.*"
+  "PhoenixReplay.Recording.*",
+  "Inspect.PhoenixReplay.Recording.Runtime"
 ]
 
 # Behaviours and their built-in implementations.
