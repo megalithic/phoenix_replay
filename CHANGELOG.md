@@ -7,9 +7,13 @@ Streams and uploads in the replay.
 ### Added
 
 - `streams: true` records what each render inserts, updates and deletes in the streams of a LiveView and its LiveComponents, and the replay shows the rows the page showed at each moment. Items go through your sanitizer's `sanitize_assigns/1` under the stream's name. Off by default.
-- `uploads: true` records uploads' settings and errors, and each file's name, size, type and progress, never its contents or path, and the replay renders `live_file_input/1` and the entries as they were. Off by default.
+- `uploads: true` records uploads' settings and errors, and each file's name, size, type and progress, never its contents or path, and the replay renders `live_file_input/1` and the entries as they were, in a LiveComponent too. Off by default.
 - Both can be set per live session, as `{PhoenixReplay.Recorder, streams: true, uploads: true}`.
 - The event list shows a render's stream changes as `rows +2 −1` and uploads as `upload csv`, and the **State** tab lists their rows and state under `streams` and `uploads`.
+
+### Changed
+
+- The replayed page is `inert`: in the player and exports, and in your own `:frame_layout`, it can no longer be focused, clicked or dropped on, where its recorded bindings did nothing anyway, so a replayed upload input cannot start an upload.
 
 ### Fixed
 

@@ -32,12 +32,18 @@ defmodule PhoenixReplay.Web.Live.Frame do
   that fails with the recorded assigns shows a placeholder instead of
   crashing the frame.
 
+  The replayed page is for looking at: its container is `inert`, so the
+  viewer cannot focus, click or drop anything into it. Its recorded
+  bindings would do nothing, and an upload input, which LiveView's client
+  drives without the frame's `handle_event/3`, would ask the frame for an
+  upload it does not have.
+
   A session that is still running is never read from the buffer here: the
   player redacts it and hands it over with `PhoenixReplay.Web.Player.Channel.load/2`.
   Until then the frame shows a placeholder.
   """
 
-  use Phoenix.LiveView
+  use Phoenix.LiveView, container: {:div, inert: true}
 
   alias PhoenixReplay.{Migration, Replay}
   alias PhoenixReplay.Recording.{State, Timeline}

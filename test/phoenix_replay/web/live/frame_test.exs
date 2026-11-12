@@ -241,6 +241,8 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
     html = build_conn() |> get("/replay/frame/frame") |> html_response(200)
 
     assert html =~ ~s(href="/assets/css/app.css")
+    # The replayed page is for looking at; see priv/ts/replay/frame.test.ts.
+    assert html =~ ~r/<div [^>]*data-phx-main[^>]* inert[ >]/
     assert html =~ ~r|src="/replay/assets/phoenix_live_view-[0-9.]+\.js"|
     assert html =~ ~r|src="/replay/assets/dashboard-[0-9a-f]{8}\.js"|
   end
