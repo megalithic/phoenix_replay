@@ -17,24 +17,30 @@ defmodule PhoenixReplay.Capture.ViewEvents do
   recorder's own script sends, the pointer, state and viewport, are
   recorded by `PhoenixReplay.Recorder` instead.
 
+  It also hands `[:phoenix, :live_view, :render, :start]` to
+  `PhoenixReplay.Capture.Streams.render_started/1`, which takes the
+  operations queued in the view's streams before LiveView clears them.
+
   Like the other handlers, it reports a failure with
   `[:phoenix_replay, :collector, :exception]` rather than raise, which
   would detach it for the whole application.
   """
 
   alias PhoenixReplay.Telemetry
-  alias PhoenixReplay.Capture.{Browser, Pointer, State}
+  alias PhoenixReplay.Capture.{Browser, Pointer, State, Streams}
   alias PhoenixReplay.Session.Buffer
 
   @handler __MODULE__
   @event [:phoenix, :live_view, :handle_event, :start]
+  @render [:phoenix, :live_view, :render, :start]
 
   # Sent by the recorder's script, and recorded by the recorder.
   @own [Pointer.event(), State.event(), Browser.viewport_event()]
 
   @doc "Attaches the telemetry handler. Called by `PhoenixReplay.Capture.Handlers`."
   @spec attach() :: :ok | {:error, :already_exists}
-  def attach, do: :telemetry.attach(@handler, @event, &__MODULE__.handle_event/4, nil)
+  def attach,
+    do: :telemetry.attach_many(@handler, [@event, @render], &__MODULE__.handle_event/4, nil)
 
   @doc "Detaches the telemetry handler, if attached."
   @spec detach() :: :ok
@@ -50,7 +56,7 @@ defmodule PhoenixReplay.Capture.ViewEvents do
   """
   @spec handle_event([atom()], map(), map(), term()) :: :ok
   def handle_event(event, _measures, metadata, _handler_config) do
-    capture(metadata)
+    if event == @render, do: Streams.render_started(metadata), else: capture(metadata)
     :ok
   catch
     kind, reason -> Telemetry.collector_failed(__MODULE__, event, kind, reason, __STACKTRACE__)

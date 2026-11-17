@@ -86,7 +86,7 @@ config :phoenix_replay, release: System.get_env("GIT_SHA")
 ## Pitfalls
 
 - A view that renders differently because of browser-only code, such as a list a script filters, replays without that code. Report the state with `replayState(key, changes)` and render it with `replay_render/1`, declared by `PhoenixReplay.Replay.View`.
-- Streams and uploads are not replayed: their contents are not kept in assigns.
+- Streams and uploads replay empty unless `streams: true` and `uploads: true` record them, globally or per live session. Stream items go through `sanitize_assigns/1` under the stream's name; uploads record file names, sizes and types, never contents.
 - Do not name an assign `:phoenix_replay_state`; the replay uses it.
 - A theme or setting kept only in `localStorage` never reaches the server, so the replay cannot show it. Keep it in the session and an assign, as the example app's `ExampleWeb.Theme` does.
 - Replay renders today's templates with the assigns recorded then. An assign a recording lacks renders as `nil`; one that changed shape, such as a boolean that became a string, takes a `PhoenixReplay.Migration`. Renaming or deleting a LiveView or LiveComponent makes recordings that name it unreadable.

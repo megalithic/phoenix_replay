@@ -4,9 +4,10 @@ defmodule PhoenixReplay.Web.Live.ReplayComponent do
 
   `PhoenixReplay.Web.Rendering.rewrite/2` puts it in place of each component,
   so the frame renders the original module's template with the assigns the
-  parent passes merged with the assigns recorded for that component. The
-  frame refreshes it with `send_update/3` after every seek. Events from the
-  recorded template are ignored.
+  parent passes merged with the assigns recorded for that component, and
+  its recorded streams and uploads; a stream or upload the recording lacks
+  renders empty. The frame refreshes it with `send_update/3` after every
+  seek. Events from the recorded template are ignored.
   """
 
   use Phoenix.LiveComponent
@@ -36,7 +37,8 @@ defmodule PhoenixReplay.Web.Live.ReplayComponent do
     {:ok,
      socket
      |> assign(replay)
-     |> assign(passed |> Map.merge(recorded) |> Rendering.assignable())}
+     |> assign(passed |> Map.merge(recorded) |> Rendering.assignable())
+     |> Rendering.put_streams_and_uploads(recorded)}
   end
 
   @impl true
@@ -44,7 +46,9 @@ defmodule PhoenixReplay.Web.Live.ReplayComponent do
 
   @impl true
   def render(%{__replay_module__: module} = assigns) do
-    case Rendering.render_error(module, assigns) do
+    {assigns, check} = Rendering.fill_streams_and_uploads(module, assigns)
+
+    case Rendering.check_error(check) do
       nil ->
         assigns |> module.render() |> Rendering.rewrite(assigns.__replay_states__)
 

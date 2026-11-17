@@ -3,7 +3,8 @@ defmodule PhoenixReplay.Recording.Label do
   One-line descriptions of recorded events, as the player's event list and
   `PhoenixReplay.Trace` show them: `save → Cart#3: qty=2`, `navigate →
   /orders`, `assigns form, tasks`, a query's summary, a log's level and
-  message.
+  message. Streams read as the rows a render added and removed, such as
+  `rows +2 −1`, and uploads by name, such as `upload avatar`.
   """
 
   alias PhoenixReplay.Recording.{Client, Event, State, Value}
@@ -23,10 +24,10 @@ defmodule PhoenixReplay.Recording.Label do
   def of(%Event{type: :params, data: %{uri: uri}}), do: "navigate → #{uri}"
   def of(%Event{type: :info, data: %{tag: nil}}), do: "handle_info"
   def of(%Event{type: :info, data: %{tag: tag}}), do: "handle_info #{Value.inspect(tag)}"
-  def of(%Event{type: :render, data: %{assigns: assigns}}), do: assigns_label(assigns)
+  def of(%Event{type: :render, data: %{assigns: _assigns} = data}), do: changes_label(data)
 
-  def of(%Event{type: :component, data: %{module: module, id: id, assigns: assigns}}),
-    do: "#{component(module, id)} #{assigns_label(assigns)}"
+  def of(%Event{type: :component, data: %{module: module, id: id} = data}),
+    do: "#{component(module, id)} #{changes_label(data)}"
 
   def of(%Event{type: :component_destroyed, data: %{module: module, id: id}}),
     do: "#{component(module, id)} removed"
@@ -63,8 +64,37 @@ defmodule PhoenixReplay.Recording.Label do
   def component(module, id) when is_binary(id), do: "#{inspect(module)}##{id}"
   def component(module, id), do: "#{inspect(module)}##{Value.inspect(id)}"
 
+  defp changes_label(%{assigns: assigns} = data) do
+    assigns = if assigns == %{}, do: [], else: [assigns_label(assigns)]
+    Enum.join(assigns ++ streams_and_uploads(data), ", ")
+  end
+
   defp assigns_label(assigns) do
     "assigns " <> (assigns |> Map.keys() |> Enum.sort() |> Enum.map_join(", ", &to_string/1))
+  end
+
+  defp streams_and_uploads(data) do
+    streams =
+      for {name, ops} <- Enum.sort(data[:streams] || %{}), do: "#{name} #{stream_ops(ops)}"
+
+    uploads = for {name, _upload} <- Enum.sort(data[:uploads] || %{}), do: "upload #{name}"
+    streams ++ uploads
+  end
+
+  @doc """
+  What a render did to one stream: `reset`, the rows it inserted or
+  updated and those it deleted, as `reset +3`, `+2 −1` or, for a stream
+  defined empty, `+0`.
+  """
+  @spec stream_ops(PhoenixReplay.Recording.Streams.ops()) :: String.t()
+  def stream_ops(%{reset?: reset?, inserts: inserts, deletes: deletes}) do
+    [
+      reset? && "reset",
+      (inserts != [] or not (reset? or deletes != [])) && "+#{length(inserts)}",
+      deletes != [] && "−#{length(deletes)}"
+    ]
+    |> Enum.filter(& &1)
+    |> Enum.join(" ")
   end
 
   defp params_line(params) do

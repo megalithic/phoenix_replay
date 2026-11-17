@@ -8,8 +8,8 @@ defmodule PhoenixReplay.Recorder do
 
   Options given as `{PhoenixReplay.Recorder, opts}` override the
   `PhoenixReplay.Config` values for that live session. `:sample_rate`,
-  `:keep`, `:max_events`, `:sanitizer`, `:redact`, `:flush`, `:pointer` and
-  `:state` are accepted:
+  `:keep`, `:max_events`, `:sanitizer`, `:redact`, `:flush`, `:pointer`,
+  `:state`, `:streams` and `:uploads` are accepted:
 
       live_session :checkout,
         on_mount: [{PhoenixReplay.Recorder, keep: [rate: 0.1, errors: true]}] do
@@ -18,7 +18,9 @@ defmodule PhoenixReplay.Recorder do
 
   Recording starts on the connected mount. Lifecycle hooks capture events,
   params changes, `handle_info/2` message tags, and the assigns changed by
-  each render, all passed through the configured `PhoenixReplay.Sanitizer`.
+  each render, with, when `:streams` and `:uploads` are configured, what
+  it changed in streams and uploads, all passed through the configured
+  `PhoenixReplay.Sanitizer`.
   While `:max_memory` is exceeded, new sessions are not recorded.
   Events are written by the LiveView process itself into
   `PhoenixReplay.Session.Buffer`; `PhoenixReplay.Session.Monitor` saves the
@@ -50,7 +52,7 @@ defmodule PhoenixReplay.Recorder do
     ]
 
   alias PhoenixReplay.{Config, Migration, Recording}
-  alias PhoenixReplay.Capture.{Assigns, Browser, Pointer, State}
+  alias PhoenixReplay.Capture.{Assigns, Browser, Pointer, State, Streams}
   alias PhoenixReplay.Session.{Buffer, Monitor}
 
   @private :phoenix_replay
@@ -66,7 +68,9 @@ defmodule PhoenixReplay.Recorder do
     :redact,
     :flush,
     :pointer,
-    :state
+    :state,
+    :streams,
+    :uploads
   ]
 
   @doc """
@@ -135,7 +139,8 @@ defmodule PhoenixReplay.Recorder do
       layout?: false,
       sanitizer: sanitizer,
       pointer: config.pointer,
-      state: config.state
+      state: config.state,
+      kept: Config.streams_and_uploads(config)
     }
 
     socket
@@ -207,13 +212,22 @@ defmodule PhoenixReplay.Recorder do
 
   defp after_render(socket), do: socket |> capture_layout() |> record_render()
 
+  # Streams were taken as the render started, before LiveView's hooks
+  # cleared them; see PhoenixReplay.Capture.Streams.
   defp record_render(%{assigns: %{__changed__: changed}} = socket) when map_size(changed) > 0 do
-    %{sanitizer: sanitizer} = socket.private[@private]
+    %{sanitizer: sanitizer, kept: kept} = socket.private[@private]
+    changes = Map.take(socket.assigns, Map.keys(changed))
+    assigns = Assigns.view(changes, sanitizer)
 
-    case socket.assigns |> Map.take(Map.keys(changed)) |> Assigns.view(sanitizer) do
-      assigns when map_size(assigns) > 0 -> record(socket, :render, %{assigns: assigns})
-      _empty -> socket
-    end
+    streams_and_uploads =
+      changes
+      |> Map.delete(:streams)
+      |> Assigns.streams_and_uploads(kept, sanitizer)
+      |> Map.merge(Streams.take())
+
+    if assigns == %{} and streams_and_uploads == %{},
+      do: socket,
+      else: record(socket, :render, Map.put(streams_and_uploads, :assigns, assigns))
   end
 
   defp record_render(socket), do: socket

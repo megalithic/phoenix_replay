@@ -177,7 +177,7 @@ Your root layout loads your own JavaScript in the frame. `replayRecorder` record
 
 A view's own layout is replayed around it with the recorded assigns, its flash messages included: the layout it rendered in live, whether its `use Phoenix.LiveView, layout: ...` names it or `mount/3` or an `on_mount` hook returned it with `layout:`. Recordings made before the layout was kept replay in the one the view's `use` names today.
 
-Interaction in the frame is ignored: recorded templates keep their `phx-click` bindings, but the frame does not act on them.
+The replayed page is for looking at: it is `inert`, so it cannot be focused, clicked or dropped on, and recorded templates keep their `phx-click` bindings, which the frame does not act on.
 
 ## Assets
 

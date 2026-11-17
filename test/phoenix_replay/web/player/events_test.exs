@@ -24,6 +24,20 @@ defmodule PhoenixReplay.Web.Player.EventsTest do
     assert event.(:info, %{tag: nil}) == "handle_info"
     assert event.(:render, %{assigns: %{b: 1, a: 2}}) == "assigns a, b"
 
+    rows = %{reset?: false, inserts: [%{}, %{}], deletes: ["row-1"]}
+    notes = %{reset?: true, inserts: [], deletes: []}
+
+    assert event.(:render, %{assigns: %{}, streams: %{rows: rows}, uploads: %{csv: %{}}}) ==
+             "rows +2 −1, upload csv"
+
+    assert event.(:component, %{
+             module: MyApp.Notes,
+             id: 1,
+             assigns: %{a: 1},
+             streams: %{notes: notes}
+           }) ==
+             "MyApp.Notes#1 assigns a, notes reset"
+
     query = %{event: [:repo, :query], summary: "SELECT 1", measurements: %{}, metadata: %{}}
     assert event.(:telemetry, Map.put(query, :error, nil)) == "SELECT 1"
     assert event.(:telemetry, %{query | summary: nil} |> Map.put(:error, nil)) == "repo.query"

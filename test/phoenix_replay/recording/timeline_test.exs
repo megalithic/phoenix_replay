@@ -77,4 +77,54 @@ defmodule PhoenixReplay.Recording.TimelineTest do
       assert walked == Timeline.at(recording, last)
     end
   end
+
+  test "keeps the rows of streams and the latest state of uploads, of the view and components" do
+    insert = &%{dom_id: &1, at: -1, limit: nil, update_only: false, item: &1}
+    ops = &%{reset?: false, deletes: &2, inserts: Enum.map(&1, insert)}
+    upload = &%{ref: "u", accept: :any, entries: &1}
+
+    recording =
+      recording([
+        %Event{at: 0, type: :mount, data: %{assigns: %{}}},
+        %Event{
+          at: 1,
+          type: :render,
+          data: %{
+            assigns: %{a: 1},
+            streams: %{rows: ops.(["r1", "r2"], [])},
+            uploads: %{csv: upload.([])}
+          }
+        },
+        %Event{at: 2, type: :render, data: %{assigns: %{a: 2}}},
+        %Event{
+          at: 3,
+          type: :render,
+          data: %{
+            assigns: %{},
+            streams: %{rows: ops.([], ["r1"])},
+            uploads: %{csv: upload.([:file])}
+          }
+        },
+        %Event{
+          at: 4,
+          type: :component,
+          data: %{module: C, id: 1, assigns: %{b: 1}, streams: %{notes: ops.(["n1"], [])}}
+        },
+        %Event{at: 5, type: :component_destroyed, data: %{module: C, id: 1}},
+        %Event{at: 6, type: :mount, data: %{assigns: %{}}}
+      ])
+
+    assert %{streams: %{rows: [{"r1", "r1"}, {"r2", "r2"}]}, uploads: %{csv: %{entries: []}}} =
+             Timeline.at(recording, 2).assigns
+
+    assert %{a: 2, streams: %{rows: [{"r2", "r2"}]}, uploads: %{csv: %{entries: [:file]}}} =
+             Timeline.at(recording, 3).assigns
+
+    assert Timeline.at(recording, 4).components == %{
+             {C, 1} => %{b: 1, streams: %{notes: [{"n1", "n1"}]}}
+           }
+
+    assert Timeline.at(recording, 5).components == %{}
+    refute Map.has_key?(Timeline.at(recording, 6).assigns, :streams)
+  end
 end
