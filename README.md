@@ -140,6 +140,8 @@ config :phoenix_replay,
   retention: [max_age: :timer.hours(24 * 7), max_count: 1_000]
 ```
 
+In a cluster, **Live now** and the player find running sessions on every connected node. Connect the nodes, for example with libcluster, and use shared storage, such as the same Postgres database with `PhoenixReplay.Storage.Ecto`, so saved recordings are available on every node too.
+
 See the [Storage guide](https://hexdocs.pm/phoenix_replay/storage.html) and the [Configuration cheatsheet](https://hexdocs.pm/phoenix_replay/configuration.html).
 
 ## Example app
