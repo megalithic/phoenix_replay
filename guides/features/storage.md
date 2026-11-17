@@ -83,7 +83,11 @@ Without `:max_age` or `:max_count`, recordings are kept until deleted from the d
 
 ## Format
 
-Recordings are stored as compressed Erlang External Term Format, which keeps structs, atoms and tuples intact so templates re-render exactly. Decoding uses `:safe` mode: a recording that refers to atoms the node does not know, for example from a view that no longer exists, is skipped instead of creating atoms.
+Recordings are stored as compressed Erlang External Term Format, which keeps structs, atoms and tuples intact. Pids, ports, references and local functions are stored as `PhoenixReplay.Recording.Runtime` structs that display like the original values without referring to the recording node. They stay distinct from literal strings in map keys and sets, though distinct local functions with identical inspected representations can still collapse as keys or set members. External functions are kept unchanged.
+
+Regexes keep their source and options, but their compiled `re_pattern` becomes `nil`, including in forms' changeset validations. Node-bound values and compiled regexes are kept for display, not execution: a template that calls a recorded local function or runs `Regex.match?/2` on a recorded regex fails during replay and shows the "Could not render" placeholder. Views that need to rebuild such values can define `replay_render/1`; see `PhoenixReplay.Replay.View`.
+
+These changes apply to new recordings only; already saved recordings are not migrated. Decoding uses `:safe` mode: a recording that refers to atoms the node does not know, for example from a view that no longer exists, is skipped instead of creating atoms.
 
 ## Custom backends
 
