@@ -407,6 +407,40 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
     assert quantities.(render(view)) == %{"apple" => "0", "pear" => "1"}
   end
 
+  test "replays a stored LiveComponent's slots, back and forth", %{sessions: sessions} do
+    {:ok, page, _html, id} = Sessions.live(sessions, build_conn(), "/slotted")
+    for _ <- 1..2, do: page |> element("#panel button") |> render_click()
+    assert Sessions.stop(sessions, page) == :persisted
+    {:ok, recording} = Storage.fetch(Fixtures.storage(), id)
+
+    {:ok, view, html} = live(build_conn(), "/replay/#{id}/frame?channel=c5")
+    assert html =~ "<h2>Notes</h2>"
+    assert html =~ ~s(<p class="body">Inner content</p>)
+    refute html =~ "Could not render"
+
+    replay_at = fn index ->
+      seek("c5", index)
+      :sys.get_state(view.pid)
+      render(view)
+    end
+
+    html = replay_at.(length(recording.events) - 1)
+    assert html =~ ~s(<span class="opened">2</span>)
+    assert html =~ ~s(<p class="body">Inner content</p>)
+    refute html =~ "Could not render"
+
+    after_one_click =
+      Enum.find_index(
+        recording.events,
+        &match?(%{type: :component, data: %{assigns: %{opened: 1}}}, &1)
+      )
+
+    html = replay_at.(after_one_click)
+    assert html =~ ~s(<span class="opened">1</span>)
+    assert html =~ ~s(<p class="body">Inner content</p>)
+    refute html =~ "Could not render"
+  end
+
   test "waits for a live session from the player instead of reading the buffer" do
     recording = Fixtures.counter_recording(id: "live-frame", clicks: 1)
     :ok = PhoenixReplay.Session.Buffer.open(recording, self(), PhoenixReplay.Config.load())
