@@ -75,18 +75,23 @@ defmodule PhoenixReplay.Recording.Label do
 
   defp streams_and_uploads(data) do
     streams =
-      for {name, ops} <- Enum.sort(map_or_empty(data[:streams])),
+      for {name, ops} <- named(data[:streams]),
           PhoenixReplay.Recording.Streams.valid?(ops),
           do: "#{name} #{stream_ops(ops)}"
 
-    uploads = for {name, _upload} <- Enum.sort(map_or_empty(data[:uploads])), do: "upload #{name}"
+    uploads = for {name, _upload} <- named(data[:uploads]), do: "upload #{name}"
     streams ++ uploads
   end
 
-  @doc "A recorded map of streams or uploads, or none when it is missing or malformed."
-  @spec map_or_empty(term()) :: map()
-  def map_or_empty(map) when is_map(map), do: map
-  def map_or_empty(_other), do: %{}
+  @doc """
+  The entries of a recorded map of streams or uploads named by an atom or a
+  string, sorted by name; none when it is missing or malformed.
+  """
+  @spec named(term()) :: [{atom() | String.t(), term()}]
+  def named(map) when is_map(map),
+    do: map |> Enum.filter(fn {name, _} -> is_atom(name) or is_binary(name) end) |> Enum.sort()
+
+  def named(_other), do: []
 
   @doc """
   What a render did to one stream: `reset`, the rows it inserted or

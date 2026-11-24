@@ -253,6 +253,18 @@ defmodule PhoenixReplay.Web.Player.EventsTest do
     assert text.(Events.parts(event(0, :render, %{assigns: %{tasks: [], filter: "all"}}))) ==
              [{:text, "assigns"}, {:code, "filter, tasks"}]
 
+    # Streams and uploads of a malformed recording that cannot be named are left out.
+    rows = %{reset?: false, inserts: [], deletes: []}
+
+    malformed = %{
+      assigns: %{a: 1},
+      streams: %{{:bad, :name} => rows, rows: %{}},
+      uploads: %{{:bad, :name} => %{}}
+    }
+
+    assert text.(Events.parts(event(0, :render, malformed))) == [{:text, "assigns"}, {:code, "a"}]
+    assert Event.label(event(0, :render, malformed)) == "assigns a"
+
     assert text.(Events.parts(event(0, :params, %{params: %{}, uri: "http://x/<b>"}))) ==
              [{:text, "navigate →"}, {:code, "http://x/&lt;b&gt;"}]
 
