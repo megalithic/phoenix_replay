@@ -466,10 +466,19 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
       end
 
     events =
-      [%Event{at: 0, type: :mount, data: %{assigns: %{}}}] ++
-        renders ++
-        components ++
-        [%Event{at: 300, type: :render, data: %{assigns: %{}, streams: %{rows: ops}}}]
+      Enum.concat([
+        [%Event{at: 0, type: :mount, data: %{assigns: %{}}}],
+        renders,
+        components,
+        [
+          %Event{
+            at: 200,
+            type: :component,
+            data: %{module: PhoenixReplay.Test.Live.Notes, id: "notes", streams: %{notes: ops}}
+          },
+          %Event{at: 300, type: :render, data: %{assigns: %{}, streams: %{rows: ops}}}
+        ]
+      ])
 
     save(%PhoenixReplay.Recording{
       id: "malformed-streams",

@@ -23,6 +23,7 @@ defmodule PhoenixReplay.Web.Rendering do
 
   alias Phoenix.LiveView.{Component, Comprehension, LiveStream, Rendered, Socket}
   alias Phoenix.LiveView.{UploadConfig, UploadEntry}
+  alias PhoenixReplay.Recording.Streams
   alias PhoenixReplay.Web.Live.ReplayComponent
 
   @type states :: %{{module(), term()} => map()}
@@ -299,8 +300,8 @@ defmodule PhoenixReplay.Web.Rendering do
          }
        )
        when is_integer(max_entries) and is_integer(max_file_size) and is_boolean(auto_upload?) do
-    if text?(ref) and (accept == :any or text?(accept)) and proper_list?(errors) and
-         Enum.all?(errors, &upload_error?/1) and proper_list?(entries) and
+    if text?(ref) and (accept == :any or text?(accept)) and Streams.proper_list?(errors) and
+         Enum.all?(errors, &upload_error?/1) and Streams.proper_list?(entries) and
          Enum.all?(entries, &upload_entry?/1) do
       %UploadConfig{
         name: name,
@@ -344,9 +345,6 @@ defmodule PhoenixReplay.Web.Rendering do
   defp upload_entry?(_entry), do: false
 
   defp text?(value), do: is_binary(value) and String.valid?(value)
-
-  defp proper_list?(list) when is_list(list) and length(list) >= 0, do: true
-  defp proper_list?(_other), do: false
 
   # Unique on the page, in namespaces of their own for the view and each
   # component, by cid; the name is encoded whole, so `:rows` and `"rows"`

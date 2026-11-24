@@ -26,7 +26,7 @@ defmodule PhoenixReplay.Recording.Label do
   def of(%Event{type: :info, data: %{tag: tag}}), do: "handle_info #{Value.inspect(tag)}"
   def of(%Event{type: :render, data: %{assigns: _assigns} = data}), do: changes_label(data)
 
-  def of(%Event{type: :component, data: %{module: module, id: id, assigns: _} = data}),
+  def of(%Event{type: :component, data: %{module: module, id: id} = data}),
     do: "#{component(module, id)} #{changes_label(data)}"
 
   def of(%Event{type: :component_destroyed, data: %{module: module, id: id}}),
@@ -64,8 +64,13 @@ defmodule PhoenixReplay.Recording.Label do
   def component(module, id) when is_binary(id), do: "#{inspect(module)}##{id}"
   def component(module, id), do: "#{inspect(module)}##{Value.inspect(id)}"
 
-  defp changes_label(%{assigns: assigns} = data) do
-    assigns = if assigns == %{}, do: [], else: [assigns_label(assigns)]
+  defp changes_label(data) do
+    assigns =
+      case data[:assigns] do
+        %{} = assigns when map_size(assigns) > 0 -> [assigns_label(assigns)]
+        _none -> []
+      end
+
     Enum.join(assigns ++ streams_and_uploads(data), ", ")
   end
 

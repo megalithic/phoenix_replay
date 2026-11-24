@@ -73,12 +73,16 @@ defmodule PhoenixReplay.Recording.Streams do
   inserts of any other shape.
   """
   @spec valid?(term()) :: boolean()
-  def valid?(%{reset?: reset?, deletes: deletes, inserts: inserts})
-      when is_boolean(reset?) and is_list(deletes) and length(deletes) >= 0 and
-             is_list(inserts) and length(inserts) >= 0,
-      do: true
+  def valid?(%{reset?: reset?, deletes: deletes, inserts: inserts}) when is_boolean(reset?),
+    do: proper_list?(deletes) and proper_list?(inserts)
 
   def valid?(_ops), do: false
+
+  @doc "Whether `term` is a proper list, one Enum can walk to its end."
+  @spec proper_list?(term()) :: boolean()
+  def proper_list?([]), do: true
+  def proper_list?([_ | tail]), do: proper_list?(tail)
+  def proper_list?(_other), do: false
 
   @doc """
   Whether `name` can name a recorded stream or upload: an atom, or a string

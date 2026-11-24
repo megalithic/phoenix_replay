@@ -151,7 +151,7 @@ defmodule PhoenixReplay.Web.Player.Events do
   def details(%Event{type: :render, data: %{assigns: _assigns} = data}),
     do: changes_details(data)
 
-  def details(%Event{type: :component, data: %{module: module, id: id, assigns: _} = data}),
+  def details(%Event{type: :component, data: %{module: module, id: id} = data}),
     do: [{"Component", Label.component(module, id)} | changes_details(data)]
 
   def details(%Event{type: :component_destroyed, data: %{module: module, id: id}}),
@@ -307,7 +307,7 @@ defmodule PhoenixReplay.Web.Player.Events do
 
   def parts(%Event{type: :render, data: %{assigns: _assigns} = data}), do: changes_parts(data)
 
-  def parts(%Event{type: :component, data: %{module: module, id: id, assigns: _} = data}),
+  def parts(%Event{type: :component, data: %{module: module, id: id} = data}),
     do: [{:code, component_code(module, id)} | changes_parts(data)]
 
   def parts(%Event{type: :component_destroyed, data: %{module: module, id: id}}),
@@ -345,17 +345,24 @@ defmodule PhoenixReplay.Web.Player.Events do
 
   defp present(details), do: Enum.reject(details, fn {_name, value} -> value == nil end)
 
-  defp changes_details(%{assigns: assigns} = data),
+  defp changes_details(data),
     do:
       present([
-        {"Assigns", if(assigns != %{}, do: term(assigns))},
+        {"Assigns", if(data[:assigns] not in [nil, %{}], do: term(data[:assigns]))},
         {"Streams", term(data[:streams])},
         {"Uploads", term(data[:uploads])}
       ])
 
   # A render may change only streams or uploads, with no assigns to name.
-  defp changes_parts(%{assigns: assigns} = data) do
-    assigns = if assigns == %{}, do: [], else: [{:text, "assigns"}, {:code, names_code(assigns)}]
+  defp changes_parts(data) do
+    assigns =
+      case data[:assigns] do
+        %{} = assigns when map_size(assigns) > 0 ->
+          [{:text, "assigns"}, {:code, names_code(assigns)}]
+
+        _none ->
+          []
+      end
 
     streams =
       for {name, ops} <- Label.named(data[:streams]),
