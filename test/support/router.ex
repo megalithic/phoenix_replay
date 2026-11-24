@@ -19,6 +19,7 @@ defmodule PhoenixReplay.Test.Router do
       live "/counter", PhoenixReplay.Test.Live.Counter
       live "/form", PhoenixReplay.Test.Live.Form
       live "/cart", PhoenixReplay.Test.Live.Cart
+      live "/slotted", PhoenixReplay.Test.Live.Slotted
       live "/async", PhoenixReplay.Test.Live.AsyncPage
       live "/layout", PhoenixReplay.Test.Live.LayoutPage
       live "/staging", PhoenixReplay.Test.Live.Staging

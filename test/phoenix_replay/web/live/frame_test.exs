@@ -4,7 +4,7 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
 
-  alias PhoenixReplay.Recording.{Event, Timeline}
+  alias PhoenixReplay.Recording.{Event, Runtime, Timeline}
   alias PhoenixReplay.Storage
   alias PhoenixReplay.Test.{Fixtures, Sessions}
   alias PhoenixReplay.Web.Player.Channel
@@ -23,6 +23,82 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
 
   defp seek(channel, index) do
     Channel.seek(channel, index)
+  end
+
+  defmodule ChangesetForm do
+    use Phoenix.Component
+
+    def render(assigns) do
+      ~H"""
+      <.form for={@form} id="changeset-form">
+        <input
+          name={@form[:email].name}
+          value={@form[:email].value}
+          {Phoenix.HTML.Form.input_validations(@form, :email)}
+        />
+        <p :for={{message, _opts} <- @form[:email].errors}>{message}</p>
+      </.form>
+      """
+    end
+  end
+
+  test "replays a stored form whose changeset validated a regex" do
+    regex = ~r/@example\.com$/i
+
+    changeset =
+      {%{email: nil}, %{email: :string}}
+      |> Ecto.Changeset.cast(%{"email" => "other@elsewhere.com"}, [:email])
+      |> Ecto.Changeset.validate_required([:email])
+      |> Ecto.Changeset.validate_length(:email, min: 5, max: 80)
+      |> Ecto.Changeset.validate_format(:email, regex)
+
+    form = Phoenix.Component.to_form(changeset, as: :user, action: :validate)
+
+    recording = %{
+      Fixtures.counter_recording(id: "regex-form", clicks: 0)
+      | view: ChangesetForm,
+        events: [
+          %Event{at: 0, type: :render, data: %{assigns: %{form: form, worker: self()}}}
+        ]
+    }
+
+    save(recording)
+    assert {:ok, stored} = Storage.fetch(Fixtures.storage(), recording.id)
+    [%{data: %{assigns: %{form: stored_form, worker: worker}}}] = stored.events
+    assert stored_form.impl == Phoenix.HTML.FormData.Ecto.Changeset
+
+    assert [email: {:format, stored_regex}, email: {:length, _opts}] =
+             stored_form.source.validations
+
+    assert stored_regex == %{regex | re_pattern: nil}
+    assert inspect(stored_regex) == inspect(regex)
+    assert worker == %Runtime{kind: :pid, inspect: inspect(self())}
+
+    {:ok, _view, html} = live(build_conn(), "/replay/regex-form/frame")
+    assert html =~ ~s(name="user[email]")
+    assert html =~ ~s(value="other@elsewhere.com")
+    assert html =~ "has invalid format"
+    assert html =~ ~s(minlength="5")
+    assert html =~ ~s(maxlength="80")
+    assert html =~ " required"
+    refute html =~ "Could not render"
+
+    {:ok, player, _html} = live(build_conn(), "/replay/regex-form")
+    player |> element(~s(button[role="tab"]), "State") |> render_click()
+    assert has_element?(player, ~s([data-assign="worker"]), inspect(worker))
+    assert has_element?(player, ~s([data-assign="form"]), "Phoenix.HTML.Form")
+    refute render(player) =~ "Inspect.Error"
+
+    output =
+      ExUnit.CaptureIO.capture_io(fn ->
+        Mix.Tasks.PhoenixReplay.Show.run(["regex-form", "--at", "0"])
+      end)
+
+    assert output =~ "worker: #{inspect(self())}"
+    refute output =~ "PhoenixReplay.Recording.Runtime"
+    assert output =~ "Phoenix.HTML.Form"
+    assert output =~ "other@elsewhere.com"
+    refute output =~ "#Inspect.Error"
   end
 
   test "replays client state through replay_render/1, back and forth" do
@@ -531,6 +607,40 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
     :sys.get_state(view.pid)
     refute render(view) =~ "Could not render"
     refute_receive {Channel, {:unrecorded, _keys}}
+  end
+
+  test "replays a stored LiveComponent's slots, back and forth", %{sessions: sessions} do
+    {:ok, page, _html, id} = Sessions.live(sessions, build_conn(), "/slotted")
+    for _ <- 1..2, do: page |> element("#panel button") |> render_click()
+    assert Sessions.stop(sessions, page) == :persisted
+    {:ok, recording} = Storage.fetch(Fixtures.storage(), id)
+
+    {:ok, view, html} = live(build_conn(), "/replay/#{id}/frame?channel=c5")
+    assert html =~ "<h2>Notes</h2>"
+    assert html =~ ~s(<p class="body">Inner content</p>)
+    refute html =~ "Could not render"
+
+    replay_at = fn index ->
+      seek("c5", index)
+      :sys.get_state(view.pid)
+      render(view)
+    end
+
+    html = replay_at.(length(recording.events) - 1)
+    assert html =~ ~s(<span class="opened">2</span>)
+    assert html =~ ~s(<p class="body">Inner content</p>)
+    refute html =~ "Could not render"
+
+    after_one_click =
+      Enum.find_index(
+        recording.events,
+        &match?(%{type: :component, data: %{assigns: %{opened: 1}}}, &1)
+      )
+
+    html = replay_at.(after_one_click)
+    assert html =~ ~s(<span class="opened">1</span>)
+    assert html =~ ~s(<p class="body">Inner content</p>)
+    refute html =~ "Could not render"
   end
 
   test "waits for a live session from the player instead of reading the buffer" do

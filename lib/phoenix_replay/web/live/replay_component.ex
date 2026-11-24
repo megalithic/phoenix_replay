@@ -6,8 +6,10 @@ defmodule PhoenixReplay.Web.Live.ReplayComponent do
   so the frame renders the original module's template with the assigns the
   parent passes merged with the assigns recorded for that component, and
   its recorded streams and uploads; a stream or upload the recording lacks
-  renders empty. The frame refreshes it with `send_update/3` after every
-  seek. Events from the recorded template are ignored.
+  renders empty. Slots always come from the parent: recordings store their
+  render functions only as `PhoenixReplay.Recording.Runtime` structs. The
+  frame refreshes it with `send_update/3` after every seek. Events from the
+  recorded template are ignored.
   """
 
   use Phoenix.LiveComponent
@@ -32,7 +34,7 @@ defmodule PhoenixReplay.Web.Live.ReplayComponent do
       |> Map.drop(@replay_keys)
       |> Map.reject(fn {key, value} -> key == :id and value == {module, id} end)
 
-    recorded = Map.get(states, {module, id}, %{})
+    recorded = states |> Map.get({module, id}, %{}) |> Map.reject(&slot?/1)
 
     {:ok,
      socket
@@ -40,6 +42,9 @@ defmodule PhoenixReplay.Web.Live.ReplayComponent do
      |> assign(passed |> Map.merge(recorded) |> Rendering.assignable())
      |> Rendering.put_streams_and_uploads(recorded)}
   end
+
+  defp slot?({_key, [%{__slot__: _} | _]}), do: true
+  defp slot?(_assign), do: false
 
   @impl true
   def handle_event(_event, _params, socket), do: {:noreply, socket}

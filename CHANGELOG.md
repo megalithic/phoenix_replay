@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Streams and uploads in the replay, and live sessions across connected nodes.
+Streams and uploads in the replay, live sessions across connected nodes, and recordings that open on any node.
 
 ### Added
 
@@ -19,6 +19,7 @@ Streams and uploads in the replay, and live sessions across connected nodes.
 
 - A view or LiveComponent whose template reads `@streams.name` or `@uploads.name` replays with an empty stream or upload when the recording has none, as in recordings made before or without `:streams` and `:uploads`, instead of "Could not render ...: the recording has no @streams". The player notes them, such as "Not in recording: @streams.rows".
 - **Live now** lists running sessions across connected nodes, and the player and replay frame can open a session buffered on another node. Nodes must be connected, for example with libcluster, and share storage. Nodes that fail or time out during discovery are skipped.
+- New recordings open on nodes that never knew the recording node, including after a redeploy changes its name. Storage replaces pids, ports, references and local functions with `PhoenixReplay.Recording.Runtime` structs that display like the original values but stay distinct from literal strings in map keys and sets, and keeps regex sources and options without their compiled patterns, including in forms' changeset validations. External functions are kept. Recorded runtime values and regexes are for display, not execution during replay. Already saved recordings are unchanged; there is no migration.
 
 ## 0.6.2 - 2026-10-09
 
