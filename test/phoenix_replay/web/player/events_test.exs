@@ -38,6 +38,11 @@ defmodule PhoenixReplay.Web.Player.EventsTest do
            }) ==
              "MyApp.Notes#1 assigns a, notes reset"
 
+    assert event.(:render, %{assigns: %{a: 1}, streams: %{rows: %{}}, uploads: [:csv]}) ==
+             "assigns a"
+
+    assert event.(:render, %{assigns: %{}, streams: :corrupt}) == ""
+
     query = %{event: [:repo, :query], summary: "SELECT 1", measurements: %{}, metadata: %{}}
     assert event.(:telemetry, Map.put(query, :error, nil)) == "SELECT 1"
     assert event.(:telemetry, %{query | summary: nil} |> Map.put(:error, nil)) == "repo.query"

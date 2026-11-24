@@ -358,12 +358,13 @@ defmodule PhoenixReplay.Web.Player.Events do
     assigns = if assigns == %{}, do: [], else: [{:text, "assigns"}, {:code, names_code(assigns)}]
 
     streams =
-      for {name, ops} <- Enum.sort(data[:streams] || %{}),
+      for {name, ops} <- Enum.sort(Label.map_or_empty(data[:streams])),
+          PhoenixReplay.Recording.Streams.valid?(ops),
           part <- [{:code, names_code([name])}, {:text, Label.stream_ops(ops)}],
           do: part
 
     uploads =
-      for name <- (data[:uploads] || %{}) |> Map.keys() |> Enum.sort(),
+      for name <- data[:uploads] |> Label.map_or_empty() |> Map.keys() |> Enum.sort(),
           part <- [{:text, "upload"}, {:code, names_code([name])}],
           do: part
 

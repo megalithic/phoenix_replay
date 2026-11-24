@@ -227,6 +227,8 @@ defmodule PhoenixReplay.Recording.Timeline do
 
   defp merge_uploads(assigns, nil), do: assigns
 
+  defp merge_uploads(assigns, uploads) when not is_map(uploads), do: assigns
+
   defp merge_uploads(assigns, uploads),
     do: Map.update(assigns, :uploads, uploads, &Map.merge(&1, uploads))
 end

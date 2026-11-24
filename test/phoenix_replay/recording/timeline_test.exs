@@ -127,4 +127,16 @@ defmodule PhoenixReplay.Recording.TimelineTest do
     assert Timeline.at(recording, 5).components == %{}
     refute Map.has_key?(Timeline.at(recording, 6).assigns, :streams)
   end
+
+  test "seeks past streams and uploads of a malformed recording" do
+    recording =
+      recording([
+        %Event{at: 0, type: :mount, data: %{assigns: %{}}},
+        %Event{at: 1, type: :render, data: %{assigns: %{a: 1}, streams: %{rows: %{}}}},
+        %Event{at: 2, type: :render, data: %{assigns: %{a: 2}, streams: :x, uploads: [:csv]}}
+      ])
+
+    assert %{a: 2, streams: %{rows: []}} = Timeline.at(recording, 3).assigns
+    refute Map.has_key?(Timeline.at(recording, 3).assigns, :uploads)
+  end
 end

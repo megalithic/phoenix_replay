@@ -71,6 +71,24 @@ defmodule PhoenixReplay.Recording.StreamsTest do
     # A row that was not shown stays out.
     assert items([shown, ops([{"c", update_only: true}], deletes: ["c"])]) ==
              [{"a", "a"}, {"b", "b"}]
+
+    # So does a row an earlier insert's limit removed.
+    steps = [
+      ops([{"a", []}, {"b", []}, {"c", []}]),
+      ops([{"x", at: 0, limit: 3}, {"c", update_only: true, item: "C"}])
+    ]
+
+    assert items(steps) == [{"x", "x"}, {"a", "a"}, {"b", "b"}, {"c", "C"}]
+  end
+
+  test "ignores operations of any other shape" do
+    shown = %{rows: [{"a", "a"}]}
+
+    for malformed <- [%{}, nil, %{reset?: true}, %{ops([]) | inserts: [%{}, :row]}] do
+      assert Streams.apply(shown, %{rows: malformed}) == shown
+    end
+
+    assert Streams.apply(shown, :not_a_map) == shown
   end
 
   test "a positive limit keeps the first rows, a negative one the last" do
