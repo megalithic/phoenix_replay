@@ -88,7 +88,7 @@ defmodule PhoenixReplay.Recording.Label do
   string, sorted by name; none when it is missing or malformed.
   """
   @spec named(term()) :: [{atom() | String.t(), term()}]
-  def named(map) when is_map(map),
+  def named(map) when is_non_struct_map(map),
     do: map |> Enum.filter(fn {name, _} -> is_atom(name) or is_binary(name) end) |> Enum.sort()
 
   def named(_other), do: []

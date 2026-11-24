@@ -133,10 +133,11 @@ defmodule PhoenixReplay.Recording.TimelineTest do
       recording([
         %Event{at: 0, type: :mount, data: %{assigns: %{}}},
         %Event{at: 1, type: :render, data: %{assigns: %{a: 1}, streams: %{rows: %{}}}},
-        %Event{at: 2, type: :render, data: %{assigns: %{a: 2}, streams: :x, uploads: [:csv]}}
+        %Event{at: 2, type: :render, data: %{assigns: %{a: 2}, streams: :x, uploads: [:csv]}},
+        %Event{at: 3, type: :render, data: %{assigns: %{a: 3}, streams: %URI{}, uploads: %URI{}}}
       ])
 
-    assert %{a: 2, streams: %{rows: []}} = Timeline.at(recording, 3).assigns
-    refute Map.has_key?(Timeline.at(recording, 3).assigns, :uploads)
+    assert %{a: 3, streams: %{rows: []}} = Timeline.at(recording, 4).assigns
+    refute Map.has_key?(Timeline.at(recording, 4).assigns, :uploads)
   end
 end

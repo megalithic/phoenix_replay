@@ -45,7 +45,7 @@ defmodule PhoenixReplay.Recording.Streams do
 
   @doc "Applies each stream's recorded operations to its rows."
   @spec apply(%{name() => rows()}, %{name() => ops()}) :: %{name() => rows()}
-  def apply(streams, ops) when is_map(ops) do
+  def apply(streams, ops) when is_non_struct_map(ops) do
     Enum.reduce(ops, streams, fn {name, ops}, acc ->
       Map.put(acc, name, apply_ops(Map.get(acc, name, []), ops))
     end)

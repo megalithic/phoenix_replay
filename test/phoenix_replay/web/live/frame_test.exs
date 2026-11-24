@@ -411,6 +411,31 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
     assert html =~ ~s(name="csv")
   end
 
+  test "loads a recording whose streams and uploads are malformed" do
+    save(%PhoenixReplay.Recording{
+      id: "malformed-streams",
+      view: PhoenixReplay.Test.Live.Staging,
+      connected_at: System.system_time(:millisecond),
+      events: [
+        %Event{at: 0, type: :mount, data: %{assigns: %{}}},
+        %Event{at: 5, type: :render, data: %{assigns: %{}, streams: %URI{}, uploads: %URI{}}},
+        %Event{at: 9, type: :render, data: %{assigns: %{}, streams: %{rows: %{}}, uploads: [:x]}}
+      ]
+    })
+
+    {:ok, view, html} = live(build_conn(), "/replay/malformed-streams/frame?channel=c-malformed")
+    assert html =~ ~s(name="csv")
+
+    for index <- [1, 2, 0] do
+      seek("c-malformed", index)
+      :sys.get_state(view.pid)
+      assert render(view) =~ ~s(name="csv")
+    end
+
+    {:ok, player, _html} = live(build_conn(), "/replay/malformed-streams")
+    assert render(player) =~ "malformed-streams"
+  end
+
   test "renders streams and uploads a recording lacks as empty, and tells the player",
        %{sessions: sessions} do
     # Recorded without `streams: true` and `uploads: true`.

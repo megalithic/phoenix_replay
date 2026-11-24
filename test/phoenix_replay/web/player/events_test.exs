@@ -265,6 +265,10 @@ defmodule PhoenixReplay.Web.Player.EventsTest do
     assert text.(Events.parts(event(0, :render, malformed))) == [{:text, "assigns"}, {:code, "a"}]
     assert Event.label(event(0, :render, malformed)) == "assigns a"
 
+    structs = %{assigns: %{a: 1}, streams: %URI{}, uploads: %URI{}}
+    assert text.(Events.parts(event(0, :render, structs))) == [{:text, "assigns"}, {:code, "a"}]
+    assert Event.label(event(0, :render, structs)) == "assigns a"
+
     assert text.(Events.parts(event(0, :params, %{params: %{}, uri: "http://x/<b>"}))) ==
              [{:text, "navigate →"}, {:code, "http://x/&lt;b&gt;"}]
 
