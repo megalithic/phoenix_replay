@@ -30,6 +30,24 @@ defmodule PhoenixReplay.Test.Fixtures do
     }
   end
 
+  @doc "Buffers a recording on this node with the given configuration overrides."
+  @spec buffer_recording(Recording.t(), keyword()) :: :ok
+  def buffer_recording(recording, opts \\ []) do
+    config = PhoenixReplay.Config.load(opts)
+    pid = Process.whereis(PhoenixReplay.Supervisor)
+    :ok = PhoenixReplay.Session.Buffer.open(recording, pid, config)
+
+    for {event, seq} <- Enum.with_index(recording.events) do
+      :ok = PhoenixReplay.Session.Buffer.append(recording.id, seq, event)
+    end
+
+    :ok
+  end
+
+  @doc "Reports redaction progress to a test, including when called on a peer node."
+  @spec progress(pid()) :: PhoenixReplay.Redactor.progress()
+  def progress(viewer), do: fn done, total -> send(viewer, {:progress, done, total}) end
+
   @doc "Returns the storage configured for the test environment."
   @spec storage() :: PhoenixReplay.Storage.t()
   def storage, do: PhoenixReplay.Config.load().storage

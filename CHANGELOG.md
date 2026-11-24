@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Streams and uploads in the replay.
+Streams and uploads in the replay, and live sessions across connected nodes.
 
 ### Added
 
@@ -18,6 +18,7 @@ Streams and uploads in the replay.
 ### Fixed
 
 - A view or LiveComponent whose template reads `@streams.name` or `@uploads.name` replays with an empty stream or upload when the recording has none, as in recordings made before or without `:streams` and `:uploads`, instead of "Could not render ...: the recording has no @streams". The player notes them, such as "Not in recording: @streams.rows".
+- **Live now** lists running sessions across connected nodes, and the player and replay frame can open a session buffered on another node. Nodes must be connected, for example with libcluster, and share storage. Nodes that fail or time out during discovery are skipped.
 
 ## 0.6.2 - 2026-10-09
 
