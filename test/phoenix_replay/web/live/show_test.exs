@@ -101,6 +101,33 @@ defmodule PhoenixReplay.Web.Live.ShowTest do
     assert has_element?(view, ~s(#replay-assigns [data-assign="count"].bg-accent-soft))
   end
 
+  test "lists what renders changed in streams and shows the rows in the State tab" do
+    insert = %{dom_id: "row-beta", at: -1, limit: nil, update_only: false, item: %{name: "beta"}}
+
+    Storage.save(Fixtures.storage(), %{
+      Fixtures.counter_recording(id: "streamed")
+      | events: [
+          %Event{at: 0, type: :mount, data: %{assigns: %{}}},
+          %Event{at: 5, type: :render, data: %{assigns: %{count: 0}}},
+          %Event{at: 9, type: :event, data: %{name: "append", params: %{}}},
+          %Event{
+            at: 10,
+            type: :render,
+            data: %{
+              assigns: %{},
+              streams: %{rows: %{reset?: false, deletes: [], inserts: [insert]}}
+            }
+          }
+        ]
+    })
+
+    {:ok, view, _html} = live(build_conn(), "/replay/streamed?at=3")
+    assert has_element?(view, "#replay-events li li", "rows +1")
+
+    open_tab(view, "State")
+    assert has_element?(view, ~s(#replay-assigns [data-assign="streams"].bg-accent-soft))
+  end
+
   test "expands only values its row cannot show whole, and offers a theme switch" do
     recording = Fixtures.counter_recording(id: "values", clicks: 1)
     long = Enum.to_list(1..30)
@@ -755,8 +782,8 @@ defmodule PhoenixReplay.Web.Live.ShowTest do
       {:ok, view, _html} = live(build_conn(), "/replay/older")
       refute has_element?(view, "#replay-unrecorded")
 
-      send(view.pid, {PhoenixReplay.Web.Player.Channel, {:unrecorded, [:theme, :plan]}})
-      assert has_element?(view, "#replay-unrecorded", "Not in recording: @theme, @plan")
+      send(view.pid, {Channel, {:unrecorded, [:theme, {:streams, :rows}]}})
+      assert has_element?(view, "#replay-unrecorded", "Not in recording: @theme, @streams.rows")
     end
 
     test "replays the color scheme the user had" do

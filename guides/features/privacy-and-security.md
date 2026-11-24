@@ -17,7 +17,7 @@ For rules per recording or action, add a `PhoenixReplay.Authorization` module; s
 
 ## Sanitizing
 
-Everything recorded passes through a `PhoenixReplay.Sanitizer` before it is stored: assigns with `sanitize_assigns/1`, and event params, URL params and the session with `sanitize_params/1`.
+Everything recorded passes through a `PhoenixReplay.Sanitizer` before it is stored: assigns with `sanitize_assigns/1`, and event params, URL params and the session with `sanitize_params/1`. With `streams: true` or `uploads: true`, a stream's items and an upload's state go through `sanitize_assigns/1` too, under the stream's or upload's name; a sanitizer that leaves that name out leaves the stream or upload out of the recording.
 
 `PhoenixReplay.Sanitizer.Default`:
 
@@ -117,7 +117,8 @@ Turn form controls off with `state: [inputs: false]`, or all client state with `
 ## What is never recorded
 
 - `handle_info/2` message contents; only the message tag is kept,
-- the contents of streams and uploads,
+- the contents of streams, unless you turn on `streams: true`, which records their items as the assigns are recorded; see [Streams and uploads](recording.md#streams-and-uploads),
+- uploaded files: their contents, where they were written and their path on the user's machine. With `uploads: true`, each file's name, size, MIME type and progress are recorded; a file name can say something about the user, such as `lab-results-jane-doe.pdf`, so keep `:uploads` off where that matters, or leave the upload out in your sanitizer,
 - the controls listed above, and what happens in the browser that neither a form control nor `replayState` reports.
 
 ## Video export

@@ -155,6 +155,18 @@ defmodule PhoenixReplay.ConfigTest do
     assert_raise ArgumentError, ~r/:debounce/, fn -> Config.new(state: [debounce: 0]) end
   end
 
+  test "records streams and uploads only when told to" do
+    assert Config.streams_and_uploads(Config.new([])) == []
+    assert Config.streams_and_uploads(Config.new(uploads: true)) == [:uploads]
+
+    assert Config.streams_and_uploads(Config.new(streams: true, uploads: true)) == [
+             :streams,
+             :uploads
+           ]
+
+    assert_raise ArgumentError, ~r/:streams/, fn -> Config.new(streams: [limit: 1]) end
+  end
+
   test "exports videos only once configured, with an endpoint" do
     assert Config.new([]).export == nil
 

@@ -148,10 +148,11 @@ defmodule PhoenixReplay.Web.Player.Events do
 
   def details(%Event{type: :info, data: %{tag: tag}}), do: [{"Message tag", term(tag)}]
 
-  def details(%Event{type: :render, data: %{assigns: assigns}}), do: [{"Assigns", term(assigns)}]
+  def details(%Event{type: :render, data: %{assigns: _assigns} = data}),
+    do: changes_details(data)
 
-  def details(%Event{type: :component, data: %{module: module, id: id, assigns: assigns}}),
-    do: [{"Component", Label.component(module, id)}, {"Assigns", term(assigns)}]
+  def details(%Event{type: :component, data: %{module: module, id: id} = data}),
+    do: [{"Component", Label.component(module, id)} | changes_details(data)]
 
   def details(%Event{type: :component_destroyed, data: %{module: module, id: id}}),
     do: [{"Component", Label.component(module, id)}]
@@ -304,11 +305,10 @@ defmodule PhoenixReplay.Web.Player.Events do
   def parts(%Event{type: :info, data: %{tag: tag}}),
     do: [{:text, "handle_info"}, {:code, Highlight.term(tag, limit: 5, printable_limit: 60)}]
 
-  def parts(%Event{type: :render, data: %{assigns: assigns}}),
-    do: [{:text, "assigns"}, {:code, names_code(assigns)}]
+  def parts(%Event{type: :render, data: %{assigns: _assigns} = data}), do: changes_parts(data)
 
-  def parts(%Event{type: :component, data: %{module: module, id: id, assigns: assigns}}),
-    do: [{:code, component_code(module, id)}, {:text, "assigns"}, {:code, names_code(assigns)}]
+  def parts(%Event{type: :component, data: %{module: module, id: id} = data}),
+    do: [{:code, component_code(module, id)} | changes_parts(data)]
 
   def parts(%Event{type: :component_destroyed, data: %{module: module, id: id}}),
     do: [{:code, component_code(module, id)}, {:text, "removed"}]
@@ -344,6 +344,39 @@ defmodule PhoenixReplay.Web.Player.Events do
   def parts(%Event{} = event), do: [{:text, Event.label(event)}]
 
   defp present(details), do: Enum.reject(details, fn {_name, value} -> value == nil end)
+
+  defp changes_details(data),
+    do:
+      present([
+        {"Assigns", if(data[:assigns] not in [nil, %{}], do: term(data[:assigns]))},
+        {"Streams", term(data[:streams])},
+        {"Uploads", term(data[:uploads])}
+      ])
+
+  # A render may change only streams or uploads, with no assigns to name.
+  defp changes_parts(data) do
+    assigns =
+      case data[:assigns] do
+        %{} = assigns when map_size(assigns) > 0 ->
+          [{:text, "assigns"}, {:code, names_code(assigns)}]
+
+        _none ->
+          []
+      end
+
+    streams =
+      for {name, ops} <- Label.named(data[:streams]),
+          PhoenixReplay.Recording.Streams.valid?(ops),
+          part <- [{:code, names_code([name])}, {:text, Label.stream_ops(ops)}],
+          do: part
+
+    uploads =
+      for {name, _upload} <- Label.named(data[:uploads]),
+          part <- [{:text, "upload"}, {:code, names_code([name])}],
+          do: part
+
+    assigns ++ streams ++ uploads
+  end
 
   defp duration(nil), do: nil
   defp duration(ms), do: Format.milliseconds(ms)
@@ -430,10 +463,11 @@ defmodule PhoenixReplay.Web.Player.Events do
     end
   end
 
-  defp names_code(assigns) do
+  defp names_code(assigns) when is_map(assigns), do: assigns |> Map.keys() |> names_code()
+
+  defp names_code(names) do
     names =
-      assigns
-      |> Map.keys()
+      names
       |> Enum.sort()
       |> Enum.map(&token("string-special-symbol", to_string(&1)))
       |> Enum.intersperse(token("punctuation-delimiter", ", "))

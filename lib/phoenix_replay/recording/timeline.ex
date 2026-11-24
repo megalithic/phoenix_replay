@@ -10,7 +10,7 @@ defmodule PhoenixReplay.Recording.Timeline do
   """
 
   alias PhoenixReplay.Recording
-  alias PhoenixReplay.Recording.{Event, PointerTrack, State}
+  alias PhoenixReplay.Recording.{Event, PointerTrack, State, Streams}
 
   @state State.assign()
 
@@ -21,11 +21,14 @@ defmodule PhoenixReplay.Recording.Timeline do
     * `:event` — the current event, or `nil`
     * `:assigns` — the view's assigns after it, with the client state
       reported up to it merged into the reserved
-      `PhoenixReplay.Recording.State.assign/0`
+      `PhoenixReplay.Recording.State.assign/0`, and, when the recording
+      has them, its streams' rows under `:streams`, see
+      `PhoenixReplay.Recording.Streams`, and the latest state of each of
+      its uploads under `:uploads`, `%{name => upload}`
     * `:before` — the view's assigns before it, which the event changed
       into `:assigns`
     * `:components` — LiveComponent assigns after it, keyed by
-      `{module, id}`
+      `{module, id}`, with streams and uploads as the view's
     * `:url` — the page URL: the last navigation up to it, or the URL the
       session started on
     * `:viewport` — the last `:viewport` event up to it, or the viewport
@@ -182,20 +185,18 @@ defmodule PhoenixReplay.Recording.Timeline do
     timeline = %{timeline | index: timeline.index + 1, event: event, before: timeline.assigns}
 
     case event do
-      %Event{type: :mount, data: %{assigns: assigns}} ->
-        %{timeline | assigns: Map.put(assigns, @state, timeline.assigns[@state])}
+      %Event{type: :mount, data: %{assigns: _assigns} = data} ->
+        %{timeline | assigns: merge(%{@state => timeline.assigns[@state]}, data)}
 
       %Event{type: :state, data: %{key: _key}} ->
         %{timeline | assigns: Map.update!(timeline.assigns, @state, &State.apply(&1, event))}
 
-      %Event{type: :render, data: %{assigns: assigns}} ->
-        %{timeline | assigns: Map.merge(timeline.assigns, assigns)}
+      %Event{type: :render, data: %{assigns: _assigns} = data} ->
+        %{timeline | assigns: merge(timeline.assigns, data)}
 
-      %Event{type: :component, data: %{module: module, id: id, assigns: assigns}} ->
-        components =
-          Map.update(timeline.components, {module, id}, assigns, &Map.merge(&1, assigns))
-
-        %{timeline | components: components}
+      %Event{type: :component, data: %{module: module, id: id, assigns: _assigns} = data} ->
+        assigns = timeline.components |> Map.get({module, id}, %{}) |> merge(data)
+        %{timeline | components: Map.put(timeline.components, {module, id}, assigns)}
 
       %Event{type: :component_destroyed, data: %{module: module, id: id}} ->
         %{timeline | components: Map.delete(timeline.components, {module, id})}
@@ -209,5 +210,28 @@ defmodule PhoenixReplay.Recording.Timeline do
       %Event{} ->
         timeline
     end
+  end
+
+  # Recordings made without `:streams` and `:uploads`, or before them, have
+  # neither. Both come only from those fields, never from ordinary assigns.
+  defp merge(assigns, data) do
+    assigns
+    |> Map.merge(Map.drop(data.assigns, [:streams, :uploads]))
+    |> merge_streams(data[:streams])
+    |> merge_uploads(data[:uploads])
+  end
+
+  defp merge_streams(assigns, nil), do: assigns
+
+  defp merge_streams(assigns, ops),
+    do: Map.update(assigns, :streams, Streams.apply(%{}, ops), &Streams.apply(&1, ops))
+
+  defp merge_uploads(assigns, nil), do: assigns
+
+  defp merge_uploads(assigns, uploads) when not is_non_struct_map(uploads), do: assigns
+
+  defp merge_uploads(assigns, uploads) do
+    uploads = Map.filter(uploads, fn {name, _upload} -> Streams.name?(name) end)
+    Map.update(assigns, :uploads, uploads, &Map.merge(&1, uploads))
   end
 end

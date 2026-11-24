@@ -5,6 +5,8 @@ config :phoenix, :json_library, Jason
 config :phoenix_replay, PhoenixReplay.Test.Endpoint,
   http: [port: 4002],
   server: false,
+  # Uploads in tests join their channel through it.
+  pubsub_server: PhoenixReplay.PubSub,
   secret_key_base: String.duplicate("a", 64),
   live_view: [signing_salt: "test_salt"],
   render_errors: [formats: [html: PhoenixReplay.Test.ErrorHTML], layout: false]

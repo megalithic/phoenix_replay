@@ -78,6 +78,15 @@ defmodule PhoenixReplay.Config do
       * `:max_bytes` — the JSON size a batch may have; a fuller batch is
         sent early, and the server drops the rest (default `65_536`)
       * `:limit` — batches recorded per session (default `3_600`)
+    * `:streams` — records the contents of streams, so the replay shows
+      their rows: what each render inserted, updated and deleted, each
+      item sanitized under the stream's name. `false` (the default)
+      records none; see `PhoenixReplay.Capture.Streams`.
+    * `:uploads` — records the state of uploads, so the replay shows their
+      inputs and entries: each upload's settings and errors, and each
+      file's name, size, type and progress, never its contents or path.
+      `false` (the default) records none; see
+      `PhoenixReplay.Capture.Uploads`.
     * `:client` — what recordings keep in `client` about the browser and
       the visit. `:context` is its former name, still read, with a
       warning:
@@ -318,6 +327,8 @@ defmodule PhoenixReplay.Config do
           flush: flush() | nil,
           pointer: pointer() | nil,
           state: state() | nil,
+          streams: boolean(),
+          uploads: boolean(),
           client: client(),
           replay: module() | nil,
           release: String.t() | nil,
@@ -338,6 +349,8 @@ defmodule PhoenixReplay.Config do
             flush: %{events: 200, interval: 5_000},
             pointer: nil,
             state: @state,
+            streams: false,
+            uploads: false,
             client: %{headers: [], landing: nil, media: @media},
             replay: nil,
             release: nil,
@@ -384,6 +397,11 @@ defmodule PhoenixReplay.Config do
   def new(opts) when is_list(opts) do
     Enum.reduce(opts, %__MODULE__{}, &put/2)
   end
+
+  @doc "Which of `:streams` and `:uploads` `config` records."
+  @spec streams_and_uploads(t()) :: [:streams | :uploads]
+  def streams_and_uploads(%__MODULE__{} = config),
+    do: for(key <- [:streams, :uploads], Map.fetch!(config, key), do: key)
 
   defp module_key?(key), do: match?("Elixir." <> _rest, Atom.to_string(key))
 
@@ -465,6 +483,9 @@ defmodule PhoenixReplay.Config do
 
   defp put({:state, value}, config),
     do: %{config | state: switch(:state, value, config.state, @state, &valid_state?/2)}
+
+  defp put({key, value}, config) when key in [:streams, :uploads] and is_boolean(value),
+    do: Map.put(config, key, value)
 
   defp put({:flush, value}, config),
     do: %{config | flush: switch(:flush, value, config.flush, @flush, &positive?/2)}

@@ -33,9 +33,11 @@ defmodule PhoenixReplay.Web.Player.Channel do
 
   @doc """
   Tells the player which assigns the frame's template reads that the
-  recording lacks at the moment shown, which it rendered as `nil`.
+  recording lacks at the moment shown, which it rendered as `nil`, and
+  which streams and uploads, which it rendered empty; see
+  `PhoenixReplay.Web.Rendering.name/1`.
   """
-  @spec unrecorded(channel(), [atom()]) :: :ok
+  @spec unrecorded(channel(), [PhoenixReplay.Web.Rendering.missing()]) :: :ok
   def unrecorded(channel, keys), do: broadcast(channel, {:unrecorded, keys})
 
   defp broadcast(channel, message) do

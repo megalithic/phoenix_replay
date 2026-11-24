@@ -24,6 +24,25 @@ defmodule PhoenixReplay.Web.Player.EventsTest do
     assert event.(:info, %{tag: nil}) == "handle_info"
     assert event.(:render, %{assigns: %{b: 1, a: 2}}) == "assigns a, b"
 
+    rows = %{reset?: false, inserts: [%{}, %{}], deletes: ["row-1"]}
+    notes = %{reset?: true, inserts: [], deletes: []}
+
+    assert event.(:render, %{assigns: %{}, streams: %{rows: rows}, uploads: %{csv: %{}}}) ==
+             "rows +2 −1, upload csv"
+
+    assert event.(:component, %{
+             module: MyApp.Notes,
+             id: 1,
+             assigns: %{a: 1},
+             streams: %{notes: notes}
+           }) ==
+             "MyApp.Notes#1 assigns a, notes reset"
+
+    assert event.(:render, %{assigns: %{a: 1}, streams: %{rows: %{}}, uploads: [:csv]}) ==
+             "assigns a"
+
+    assert event.(:render, %{assigns: %{}, streams: :corrupt}) == ""
+
     query = %{event: [:repo, :query], summary: "SELECT 1", measurements: %{}, metadata: %{}}
     assert event.(:telemetry, Map.put(query, :error, nil)) == "SELECT 1"
     assert event.(:telemetry, %{query | summary: nil} |> Map.put(:error, nil)) == "repo.query"
@@ -233,6 +252,22 @@ defmodule PhoenixReplay.Web.Player.EventsTest do
 
     assert text.(Events.parts(event(0, :render, %{assigns: %{tasks: [], filter: "all"}}))) ==
              [{:text, "assigns"}, {:code, "filter, tasks"}]
+
+    # Streams and uploads of a malformed recording that cannot be named are left out.
+    rows = %{reset?: false, inserts: [], deletes: []}
+
+    malformed = %{
+      assigns: %{a: 1},
+      streams: %{{:bad, :name} => rows, rows: %{}},
+      uploads: %{{:bad, :name} => %{}}
+    }
+
+    assert text.(Events.parts(event(0, :render, malformed))) == [{:text, "assigns"}, {:code, "a"}]
+    assert Event.label(event(0, :render, malformed)) == "assigns a"
+
+    structs = %{assigns: %{a: 1}, streams: %URI{}, uploads: %URI{}}
+    assert text.(Events.parts(event(0, :render, structs))) == [{:text, "assigns"}, {:code, "a"}]
+    assert Event.label(event(0, :render, structs)) == "assigns a"
 
     assert text.(Events.parts(event(0, :params, %{params: %{}, uri: "http://x/<b>"}))) ==
              [{:text, "navigate →"}, {:code, "http://x/&lt;b&gt;"}]
