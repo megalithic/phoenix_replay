@@ -46,7 +46,9 @@ defmodule PhoenixReplay.Recording.Streams do
   @doc "Applies each stream's recorded operations to its rows."
   @spec apply(%{name() => rows()}, %{name() => ops()}) :: %{name() => rows()}
   def apply(streams, ops) when is_non_struct_map(ops) do
-    Enum.reduce(ops, streams, fn {name, ops}, acc ->
+    ops
+    |> Enum.filter(fn {name, _ops} -> name?(name) end)
+    |> Enum.reduce(streams, fn {name, ops}, acc ->
       Map.put(acc, name, apply_ops(Map.get(acc, name, []), ops))
     end)
   end
@@ -72,15 +74,24 @@ defmodule PhoenixReplay.Recording.Streams do
   """
   @spec valid?(term()) :: boolean()
   def valid?(%{reset?: reset?, deletes: deletes, inserts: inserts})
-      when is_boolean(reset?) and is_list(deletes) and is_list(inserts),
+      when is_boolean(reset?) and is_list(deletes) and length(deletes) >= 0 and
+             is_list(inserts) and length(inserts) >= 0,
       do: true
 
   def valid?(_ops), do: false
 
+  @doc """
+  Whether `name` can name a recorded stream or upload: an atom, or a string
+  of valid UTF-8, as the page and its JSON diffs need.
+  """
+  @spec name?(term()) :: boolean()
+  def name?(name) when is_atom(name), do: true
+  def name?(name), do: is_binary(name) and String.valid?(name)
+
   defp valid_insert?(%{dom_id: dom_id, at: at, limit: limit, update_only: update_only, item: _})
        when is_binary(dom_id) and is_integer(at) and (is_integer(limit) or is_nil(limit)) and
               is_boolean(update_only),
-       do: true
+       do: String.valid?(dom_id)
 
   defp valid_insert?(_insert), do: false
 

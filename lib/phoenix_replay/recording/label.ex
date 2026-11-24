@@ -7,7 +7,7 @@ defmodule PhoenixReplay.Recording.Label do
   `rows +2 −1`, and uploads by name, such as `upload avatar`.
   """
 
-  alias PhoenixReplay.Recording.{Client, Event, State, Value}
+  alias PhoenixReplay.Recording.{Client, Event, State, Streams, Value}
 
   @doc "One line describing `event`, as the player's event list shows it."
   @spec of(Event.t()) :: String.t()
@@ -26,7 +26,7 @@ defmodule PhoenixReplay.Recording.Label do
   def of(%Event{type: :info, data: %{tag: tag}}), do: "handle_info #{Value.inspect(tag)}"
   def of(%Event{type: :render, data: %{assigns: _assigns} = data}), do: changes_label(data)
 
-  def of(%Event{type: :component, data: %{module: module, id: id} = data}),
+  def of(%Event{type: :component, data: %{module: module, id: id, assigns: _} = data}),
     do: "#{component(module, id)} #{changes_label(data)}"
 
   def of(%Event{type: :component_destroyed, data: %{module: module, id: id}}),
@@ -76,7 +76,7 @@ defmodule PhoenixReplay.Recording.Label do
   defp streams_and_uploads(data) do
     streams =
       for {name, ops} <- named(data[:streams]),
-          PhoenixReplay.Recording.Streams.valid?(ops),
+          Streams.valid?(ops),
           do: "#{name} #{stream_ops(ops)}"
 
     uploads = for {name, _upload} <- named(data[:uploads]), do: "upload #{name}"
@@ -84,12 +84,13 @@ defmodule PhoenixReplay.Recording.Label do
   end
 
   @doc """
-  The entries of a recorded map of streams or uploads named by an atom or a
-  string, sorted by name; none when it is missing or malformed.
+  The entries of a recorded map of streams or uploads with a usable name,
+  see `PhoenixReplay.Recording.Streams.name?/1`, sorted by name; none when
+  it is missing or malformed.
   """
   @spec named(term()) :: [{atom() | String.t(), term()}]
   def named(map) when is_non_struct_map(map),
-    do: map |> Enum.filter(fn {name, _} -> is_atom(name) or is_binary(name) end) |> Enum.sort()
+    do: map |> Enum.filter(fn {name, _} -> Streams.name?(name) end) |> Enum.sort()
 
   def named(_other), do: []
 
@@ -98,7 +99,7 @@ defmodule PhoenixReplay.Recording.Label do
   updated and those it deleted, as `reset +3`, `+2 −1` or, for a stream
   defined empty, `+0`.
   """
-  @spec stream_ops(PhoenixReplay.Recording.Streams.ops()) :: String.t()
+  @spec stream_ops(Streams.ops()) :: String.t()
   def stream_ops(%{reset?: reset?, inserts: inserts, deletes: deletes}) do
     [
       reset? && "reset",

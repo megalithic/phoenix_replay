@@ -298,8 +298,10 @@ defmodule PhoenixReplay.Web.Rendering do
            entries: entries
          }
        )
-       when is_binary(ref) and is_list(errors) and is_list(entries) do
-    if Enum.all?(entries, &is_map/1) do
+       when is_integer(max_entries) and is_integer(max_file_size) and is_boolean(auto_upload?) do
+    if text?(ref) and (accept == :any or text?(accept)) and proper_list?(errors) and
+         Enum.all?(errors, &upload_error?/1) and proper_list?(entries) and
+         Enum.all?(entries, &upload_entry?/1) do
       %UploadConfig{
         name: name,
         ref: ref,
@@ -317,6 +319,34 @@ defmodule PhoenixReplay.Web.Rendering do
   end
 
   defp upload(_name, _unusable), do: nil
+
+  defp upload_error?({ref, _reason}), do: text?(ref)
+  defp upload_error?(_error), do: false
+
+  defp upload_entry?(
+         %{
+           ref: ref,
+           client_name: client_name,
+           client_size: client_size,
+           client_type: client_type,
+           progress: progress,
+           preflighted?: preflighted?,
+           valid?: valid?,
+           done?: done?,
+           cancelled?: cancelled?
+         } = entry
+       )
+       when is_non_struct_map(entry) and is_integer(client_size) and is_integer(progress) and
+              is_boolean(preflighted?) and is_boolean(valid?) and is_boolean(done?) and
+              is_boolean(cancelled?),
+       do: text?(ref) and text?(client_name) and text?(client_type)
+
+  defp upload_entry?(_entry), do: false
+
+  defp text?(value), do: is_binary(value) and String.valid?(value)
+
+  defp proper_list?(list) when is_list(list) and length(list) >= 0, do: true
+  defp proper_list?(_other), do: false
 
   # Unique on the page, in namespaces of their own for the view and each
   # component, by cid; the name is encoded whole, so `:rows` and `"rows"`

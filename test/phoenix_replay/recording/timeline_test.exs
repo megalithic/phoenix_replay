@@ -139,5 +139,16 @@ defmodule PhoenixReplay.Recording.TimelineTest do
 
     assert %{a: 3, streams: %{rows: []}} = Timeline.at(recording, 4).assigns
     refute Map.has_key?(Timeline.at(recording, 4).assigns, :uploads)
+
+    # A component event without assigns is skipped, as before streams.
+    rows = %{reset?: false, deletes: [], inserts: []}
+
+    stream_only =
+      recording([
+        %Event{at: 0, type: :mount, data: %{assigns: %{}}},
+        %Event{at: 1, type: :component, data: %{module: C, id: 1, streams: %{rows: rows}}}
+      ])
+
+    assert Timeline.at(stream_only, 2).components == %{}
   end
 end

@@ -412,25 +412,84 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
   end
 
   test "loads a recording whose streams and uploads are malformed" do
+    upload = %{
+      ref: "u",
+      accept: ".csv",
+      max_entries: 2,
+      max_file_size: 100,
+      auto_upload?: false,
+      errors: [],
+      entries: []
+    }
+
+    entry = %{
+      ref: "0",
+      client_name: "a.csv",
+      client_size: 1,
+      client_type: "text/csv",
+      progress: 0,
+      preflighted?: false,
+      valid?: true,
+      done?: false,
+      cancelled?: false
+    }
+
+    insert = %{dom_id: "row-x", at: -1, limit: nil, update_only: false, item: %{name: "x"}}
+    ops = %{reset?: false, deletes: [], inserts: [insert]}
+
+    malformed = [
+      %{streams: %URI{}, uploads: %URI{}},
+      %{streams: %{rows: %{}}, uploads: [:x]},
+      %{streams: %{rows: %{ops | inserts: [insert | :bad]}}},
+      %{streams: %{rows: %{ops | deletes: ["row-x" | :bad]}}},
+      %{streams: %{rows: %{ops | inserts: [%{insert | dom_id: <<255>>}]}}},
+      %{streams: %{<<255>> => ops}, uploads: %{<<255>> => upload}},
+      %{uploads: %{csv: %{upload | entries: [entry | :bad]}}},
+      %{uploads: %{csv: %{upload | errors: [{"0", :too_large} | :bad]}}},
+      %{uploads: %{csv: %{upload | entries: [%URI{}]}}},
+      %{uploads: %{csv: %{upload | accept: {:safe, [:bad]}}}},
+      %{uploads: %{csv: %{upload | ref: <<255>>}}},
+      %{uploads: %{csv: %{upload | entries: [%{entry | client_name: <<255>>}]}}},
+      %{assigns: %{streams: %{rows: :bad}, uploads: :bad}}
+    ]
+
+    renders =
+      for {data, at} <- Enum.with_index(malformed, 1) do
+        %Event{at: at, type: :render, data: Map.merge(%{assigns: %{}}, data)}
+      end
+
+    components =
+      for {data, at} <- Enum.with_index(malformed, 100) do
+        data = data |> Map.merge(%{module: PhoenixReplay.Test.Live.Notes, id: "notes"})
+        data = if Map.has_key?(data, :assigns), do: data, else: Map.put(data, :assigns, %{})
+        %Event{at: at, type: :component, data: data}
+      end
+
+    events =
+      [%Event{at: 0, type: :mount, data: %{assigns: %{}}}] ++
+        renders ++
+        components ++
+        [%Event{at: 300, type: :render, data: %{assigns: %{}, streams: %{rows: ops}}}]
+
     save(%PhoenixReplay.Recording{
       id: "malformed-streams",
       view: PhoenixReplay.Test.Live.Staging,
       connected_at: System.system_time(:millisecond),
-      events: [
-        %Event{at: 0, type: :mount, data: %{assigns: %{}}},
-        %Event{at: 5, type: :render, data: %{assigns: %{}, streams: %URI{}, uploads: %URI{}}},
-        %Event{at: 9, type: :render, data: %{assigns: %{}, streams: %{rows: %{}}, uploads: [:x]}}
-      ]
+      events: events
     })
 
     {:ok, view, html} = live(build_conn(), "/replay/malformed-streams/frame?channel=c-malformed")
     assert html =~ ~s(name="csv")
 
-    for index <- [1, 2, 0] do
+    for index <- 0..(length(events) - 1) do
       seek("c-malformed", index)
       :sys.get_state(view.pid)
-      assert render(view) =~ ~s(name="csv")
+      html = render(view)
+      assert html =~ ~s(name="csv"), "at event #{index}"
+      refute html =~ "Could not render", "at event #{index}"
     end
+
+    assert texts(render(view), "#rows li") == ["x"]
 
     {:ok, player, _html} = live(build_conn(), "/replay/malformed-streams")
     assert render(player) =~ "malformed-streams"

@@ -151,7 +151,7 @@ defmodule PhoenixReplay.Web.Player.Events do
   def details(%Event{type: :render, data: %{assigns: _assigns} = data}),
     do: changes_details(data)
 
-  def details(%Event{type: :component, data: %{module: module, id: id} = data}),
+  def details(%Event{type: :component, data: %{module: module, id: id, assigns: _} = data}),
     do: [{"Component", Label.component(module, id)} | changes_details(data)]
 
   def details(%Event{type: :component_destroyed, data: %{module: module, id: id}}),
@@ -307,7 +307,7 @@ defmodule PhoenixReplay.Web.Player.Events do
 
   def parts(%Event{type: :render, data: %{assigns: _assigns} = data}), do: changes_parts(data)
 
-  def parts(%Event{type: :component, data: %{module: module, id: id} = data}),
+  def parts(%Event{type: :component, data: %{module: module, id: id, assigns: _} = data}),
     do: [{:code, component_code(module, id)} | changes_parts(data)]
 
   def parts(%Event{type: :component_destroyed, data: %{module: module, id: id}}),

@@ -194,7 +194,7 @@ defmodule PhoenixReplay.Recording.Timeline do
       %Event{type: :render, data: %{assigns: _assigns} = data} ->
         %{timeline | assigns: merge(timeline.assigns, data)}
 
-      %Event{type: :component, data: %{module: module, id: id} = data} ->
+      %Event{type: :component, data: %{module: module, id: id, assigns: _assigns} = data} ->
         assigns = timeline.components |> Map.get({module, id}, %{}) |> merge(data)
         %{timeline | components: Map.put(timeline.components, {module, id}, assigns)}
 
@@ -212,10 +212,11 @@ defmodule PhoenixReplay.Recording.Timeline do
     end
   end
 
-  # Recordings made without `:streams` and `:uploads`, or before them, have neither.
+  # Recordings made without `:streams` and `:uploads`, or before them, have
+  # neither. Both come only from those fields, never from ordinary assigns.
   defp merge(assigns, data) do
     assigns
-    |> Map.merge(data.assigns)
+    |> Map.merge(Map.drop(data.assigns, [:streams, :uploads]))
     |> merge_streams(data[:streams])
     |> merge_uploads(data[:uploads])
   end
@@ -229,6 +230,8 @@ defmodule PhoenixReplay.Recording.Timeline do
 
   defp merge_uploads(assigns, uploads) when not is_non_struct_map(uploads), do: assigns
 
-  defp merge_uploads(assigns, uploads),
-    do: Map.update(assigns, :uploads, uploads, &Map.merge(&1, uploads))
+  defp merge_uploads(assigns, uploads) do
+    uploads = Map.filter(uploads, fn {name, _upload} -> Streams.name?(name) end)
+    Map.update(assigns, :uploads, uploads, &Map.merge(&1, uploads))
+  end
 end
