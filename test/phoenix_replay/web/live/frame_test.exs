@@ -444,6 +444,7 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
       %{streams: %{rows: %{ops | deletes: ["row-x" | :bad]}}},
       %{streams: %{rows: %{ops | inserts: [%{insert | dom_id: <<255>>}]}}},
       %{streams: %{<<255>> => ops}, uploads: %{<<255>> => upload}},
+      %{uploads: %{csv: %{upload | entries: [entry]}}},
       %{uploads: %{csv: %{upload | entries: [entry | :bad]}}},
       %{uploads: %{csv: %{upload | errors: [{"0", :too_large} | :bad]}}},
       %{uploads: %{csv: %{upload | entries: [%URI{}]}}},
@@ -501,7 +502,11 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
     assert texts(render(view), "#rows li") == ["x"]
 
     {:ok, player, _html} = live(build_conn(), "/replay/malformed-streams")
-    assert render(player) =~ "malformed-streams"
+    player |> element(~s(button[role="tab"]), "State") |> render_click()
+
+    for index <- 0..(length(events) - 1) do
+      assert render_click(player, "seek", %{"index" => "#{index}"}) =~ "malformed-streams"
+    end
   end
 
   test "renders streams and uploads a recording lacks as empty, and tells the player",

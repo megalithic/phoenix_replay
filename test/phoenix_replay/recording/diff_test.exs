@@ -7,6 +7,11 @@ defmodule PhoenixReplay.Web.Player.DiffTest do
     defstruct [:id, :title, done: false]
   end
 
+  test "changes an improper list whole" do
+    assert Diff.changes(%{a: []}, %{a: [1 | :bad]}) == [{:changed, [key: :a], [], [1 | :bad]}]
+    assert [_ | _] = Diff.lines(%{a: [1 | :x]}, %{a: [2 | :y]})
+  end
+
   test "names nothing when nothing changed" do
     assert Diff.changes(%{a: [1, 2]}, %{a: [1, 2]}) == []
   end

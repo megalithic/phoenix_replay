@@ -11,7 +11,7 @@ defmodule PhoenixReplay.Recording.Diff do
   whole value with its changes marked.
   """
 
-  alias PhoenixReplay.Recording.Value
+  alias PhoenixReplay.Recording.{Streams, Value}
 
   @typedoc "A step into a value: a map key or struct field, a list index, or a list item's id."
   @type step :: {:key, term()} | {:index, non_neg_integer()} | {:id, term()}
@@ -67,9 +67,16 @@ defmodule PhoenixReplay.Recording.Diff do
     do: walk_map(before, after_value, path)
 
   defp walk(before, after_value, path) when is_list(before) and is_list(after_value) do
-    if identified?(before) and identified?(after_value),
-      do: walk_by_id(before, after_value, path),
-      else: walk_by_index(before, after_value, path)
+    cond do
+      not (Streams.proper_list?(before) and Streams.proper_list?(after_value)) ->
+        [{:changed, Enum.reverse(path), before, after_value}]
+
+      identified?(before) and identified?(after_value) ->
+        walk_by_id(before, after_value, path)
+
+      true ->
+        walk_by_index(before, after_value, path)
+    end
   end
 
   defp walk(before, after_value, path)

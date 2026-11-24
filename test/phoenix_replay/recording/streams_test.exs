@@ -89,6 +89,10 @@ defmodule PhoenixReplay.Recording.StreamsTest do
     end
 
     assert Streams.apply(shown, :not_a_map) == shown
+
+    # Text the page and its JSON diffs cannot carry.
+    assert Streams.apply(shown, %{rows: ops([{<<255>>, []}])}) == shown
+    assert Streams.apply(shown, %{<<255>> => ops([{"b", []}])}) == shown
   end
 
   test "a positive limit keeps the first rows, a negative one the last" do
