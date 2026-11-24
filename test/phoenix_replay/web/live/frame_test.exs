@@ -226,7 +226,12 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
     recording = save(Fixtures.counter_recording(id: "rooted", clicks: 1))
 
     {:ok, view, _html} = live(build_conn(), "/app/replay/rooted/frame?channel=c-root")
-    assert_push_event(view, "phx_replay:root", %{layout: layout, attributes: %{}})
+
+    assert_push_event(view, "phx_replay:root", %{
+      layout: layout,
+      attributes: %{"data-replay-frame" => "ready"}
+    })
+
     assert layout =~ ~s(<html lang="en" data-count="0">)
 
     last = length(recording.events) - 1
@@ -241,19 +246,65 @@ defmodule PhoenixReplay.Web.Live.FrameTest do
     refute_push_event(view, "phx_replay:root", %{})
   end
 
-  test "sends nothing for the dashboard's own layout, but the app's root attributes" do
+  test "sends no layout for the dashboard's own, but the app's root attributes" do
     {:ok, view, _html} =
       live(build_conn(), "/replay/#{save(Fixtures.counter_recording(id: "plain")).id}/frame")
 
-    refute_push_event(view, "phx_replay:root", %{})
+    assert_push_event(view, "phx_replay:root", %{
+      layout: nil,
+      attributes: %{"data-replay-frame" => "ready"}
+    })
 
     replay_with(Replay)
     {:ok, view, _html} = live(build_conn(), "/replay/plain/frame?channel=c-plain")
 
     assert_push_event(view, "phx_replay:root", %{
       layout: nil,
-      attributes: %{"data-count" => "0", "data-none" => nil}
+      attributes: %{"data-count" => "0", "data-none" => nil, "data-replay-frame" => "ready"}
     })
+  end
+
+  test "starts at the moment t names, as the player's ?t= does" do
+    save(Fixtures.counter_recording(id: "timed", clicks: 2))
+
+    {:ok, _view, html} = live(build_conn(), "/replay/timed/frame?t=1500")
+    assert html =~ ~s(<span id="count">1</span>)
+
+    {:ok, _view, html} = live(build_conn(), "/replay/timed/frame?t=99999")
+    assert html =~ ~s(<span id="count">2</span>)
+
+    # Before the first render, or not a time: the first render.
+    for t <- ["0", "soon"] do
+      {:ok, _view, html} = live(build_conn(), "/replay/timed/frame?t=#{t}")
+      assert html =~ ~s(<span id="count">0</span>)
+    end
+  end
+
+  test "marks the replayed page ready, empty or failed" do
+    save(Fixtures.counter_recording(id: "marked"))
+    {:ok, view, _html} = live(build_conn(), "/replay/marked/frame")
+    assert_push_event(view, "phx_replay:root", %{attributes: %{"data-replay-frame" => "ready"}})
+
+    save(%{
+      Fixtures.counter_recording(id: "unrenderable")
+      | view: PhoenixReplay.Test.Live.Form,
+        events: [%Event{at: 0, type: :render, data: %{assigns: %{name: nil}}}]
+    })
+
+    {:ok, view, html} = live(build_conn(), "/replay/unrenderable/frame")
+    assert html =~ "Could not render"
+    assert_push_event(view, "phx_replay:root", %{attributes: %{"data-replay-frame" => "error"}})
+
+    recording = Fixtures.counter_recording(id: "running")
+    :ok = PhoenixReplay.Session.Buffer.open(recording, self(), PhoenixReplay.Config.load())
+    on_exit(fn -> PhoenixReplay.Session.Buffer.close("running") end)
+
+    {:ok, view, _html} = live(build_conn(), "/replay/running/frame?channel=c-running")
+    assert_push_event(view, "phx_replay:root", %{attributes: %{"data-replay-frame" => "empty"}})
+
+    Channel.load("c-running", recording)
+    render(view)
+    assert_push_event(view, "phx_replay:root", %{attributes: %{"data-replay-frame" => "ready"}})
   end
 
   test "renders an assign the recording lacks as nil, and tells the player" do

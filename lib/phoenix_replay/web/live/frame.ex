@@ -41,6 +41,14 @@ defmodule PhoenixReplay.Web.Live.Frame do
   A session that is still running is never read from the buffer here: the
   player redacts it and hands it over with `PhoenixReplay.Web.Player.Channel.load/2`.
   Until then the frame shows a placeholder.
+
+  Opened with `t`, milliseconds into the recording as the player's `?t=`,
+  the frame starts at the moment the player would show then, instead of
+  the first render, so a page can show a recording's moment without a
+  player. Once connected, the replayed page's `<html>` carries
+  `data-replay-frame`: `"ready"` when the recorded view rendered,
+  `"empty"` while there is no recording to show, as for a running session
+  before its hand-off, and `"error"` when the template could not render.
   """
 
   use Phoenix.LiveView, container: {:div, inert: true}
@@ -48,13 +56,14 @@ defmodule PhoenixReplay.Web.Live.Frame do
   alias PhoenixReplay.{Migration, Replay}
   alias PhoenixReplay.Recording.{State, Timeline}
   alias PhoenixReplay.Catalog
-  alias PhoenixReplay.Web.{Context, Layouts, Rendering}
+  alias PhoenixReplay.Web.{Context, Layouts, Params, Rendering}
   alias PhoenixReplay.Web.Player.Channel
   alias PhoenixReplay.Web.Live.ReplayComponent
 
   @private :phoenix_replay_frame
   @stage :phoenix_replay_stage
   @channel :phoenix_replay_channel
+  @start :phoenix_replay_start
   # No root layout or attributes to send, as a frame starts.
   @no_root %{layout: nil, attributes: %{}}
   # Assigns rendered as nil when the recording lacks them, at most.
@@ -87,15 +96,23 @@ defmodule PhoenixReplay.Web.Live.Frame do
      socket
      |> put_private(@stage, params["stage"] == "1")
      |> put_private(@channel, if(is_binary(params["channel"]), do: params["channel"]))
+     |> put_private(@start, Params.integer(params["t"], nil))
      |> put_private(@private, private(recording))
      |> assign(@private, frame)
-     |> show_first(), layout: false}
+     |> show_start(), layout: false}
   end
 
-  defp show_first(%{private: %{@private => %{recording: nil}}} = socket), do: socket
+  defp show_start(%{private: %{@private => %{recording: nil}}} = socket) do
+    if connected?(socket),
+      do: push_event(socket, "phx_replay:root", %{layout: nil, attributes: marker("empty")}),
+      else: socket
+  end
 
-  defp show_first(socket),
-    do: show(socket, Timeline.first_render_index(socket.private[@private].recording))
+  defp show_start(%{private: %{@start => nil, @private => %{recording: recording}}} = socket),
+    do: show(socket, Timeline.first_render_index(recording))
+
+  defp show_start(%{private: %{@start => time, @private => %{recording: recording}}} = socket),
+    do: show(socket, Timeline.index_at(recording, time))
 
   # Recorded templates keep their bindings; the replay must not react to them.
   @impl true
@@ -108,7 +125,7 @@ defmodule PhoenixReplay.Web.Live.Frame do
        socket
        |> put_private(@private, private(recording))
        |> update(@private, &%{&1 | view: recording.view, layout: recording.layout})
-       |> show_first()}
+       |> show_start()}
     else
       {:noreply, socket}
     end
@@ -259,9 +276,14 @@ defmodule PhoenixReplay.Web.Live.Frame do
   end
 
   defp root_attributes(socket) do
-    %{view: view} = socket.assigns[@private]
-    Replay.root_attributes(Context.fetch(socket).config.replay, view, socket.assigns)
+    %{view: view, error: error} = socket.assigns[@private]
+
+    Context.fetch(socket).config.replay
+    |> Replay.root_attributes(view, socket.assigns)
+    |> Map.merge(marker(if(error, do: "error", else: "ready")))
   end
+
+  defp marker(state), do: %{"data-replay-frame" => state}
 
   defp replace_flash(socket, flash) do
     Enum.reduce(flash, clear_flash(socket), fn {kind, message}, acc ->
